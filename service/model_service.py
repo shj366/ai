@@ -21,7 +21,7 @@ class AIModelService:
         :param pk: 模型 ID
         :return:
         """
-        await ai_model_dao.get(db, pk)
+        return await ai_model_dao.get(db, pk)
 
     @staticmethod
     async def get_list(db: AsyncSession) -> dict[str, Any]:

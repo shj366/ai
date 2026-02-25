@@ -11,3 +11,11 @@ class AIProviderType(IntEnum):
     groq = 4
     mistral = 5
     openrouter = 6
+
+
+class McpType(IntEnum):
+    """Mcp 类型"""
+
+    stdio = 0
+    sse = 1
+    streamable_http = 2
