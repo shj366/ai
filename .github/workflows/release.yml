@@ -13,3 +13,5 @@ jobs:
         uses: fastapi-practices/plugin-release@v1
         with:
           push-to: fastapi-practices/plugins
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
