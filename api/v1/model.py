@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
@@ -20,8 +20,10 @@ router = APIRouter()
 
 
 @router.get('/all', summary='获取所有模型', dependencies=[DependsJwtAuth])
-async def get_all_ai_models(db: CurrentSession) -> ResponseSchemaModel[list[GetAIModelDetail]]:
-    data = await ai_model_service.get_all(db=db)
+async def get_all_ai_models(
+    db: CurrentSession, provider_id: Annotated[int, Query(description='供应商 ID')]
+) -> ResponseSchemaModel[list[GetAIModelDetail]]:
+    data = await ai_model_service.get_all(db=db, provider_id=provider_id)
     return response_base.success(data=data)
 
 

@@ -35,14 +35,15 @@ class CRUDAIModel(CRUDPlus[AIModel]):
         """获取模型列表查询表达式"""
         return await self.select_order('id', 'desc')
 
-    async def get_all(self, db: AsyncSession) -> Sequence[AIModel]:
+    async def get_all(self, db: AsyncSession, provider_id: int) -> Sequence[AIModel]:
         """
         获取所有模型
 
         :param db: 数据库会话
+        :param provider_id: 供应商 ID
         :return:
         """
-        return await self.select_models(db)
+        return await self.select_models(db, provider_id=provider_id)
 
     async def create(self, db: AsyncSession, obj: CreateAIModelParam) -> None:
         """

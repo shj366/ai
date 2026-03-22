@@ -39,14 +39,15 @@ class AIModelService:
         return await paging_data(db, ai_model_select)
 
     @staticmethod
-    async def get_all(*, db: AsyncSession) -> Sequence[AIModel]:
+    async def get_all(*, db: AsyncSession, provider_id: int) -> Sequence[AIModel]:
         """
         获取所有 AI 模型
 
         :param db: 数据库会话
+        :param provider_id: 供应商 ID
         :return:
         """
-        ai_models = await ai_model_dao.get_all(db)
+        ai_models = await ai_model_dao.get_all(db, provider_id=provider_id)
         return ai_models
 
     @staticmethod
