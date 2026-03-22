@@ -78,9 +78,7 @@ async def update_mcp(
         DependsRBAC,
     ],
 )
-async def delete_mcp(
-    db: CurrentSessionTransaction, pk: Annotated[int, Path(description='MCP ID')]
-) -> ResponseModel:
+async def delete_mcp(db: CurrentSessionTransaction, pk: Annotated[int, Path(description='MCP ID')]) -> ResponseModel:
     count = await mcp_service.delete(db=db, pk=pk)
     if count > 0:
         return response_base.success()

@@ -3,6 +3,7 @@ from typing import Any
 
 import httpx
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.enums import StatusType
@@ -11,6 +12,7 @@ from backend.common.log import log
 from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
+from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.model import AIProvider
 from backend.plugin.ai.schema.model import CreateAIModelParam
 from backend.plugin.ai.schema.provider import (
@@ -40,17 +42,25 @@ class AIProviderService:
     async def get_models(self, *, db: AsyncSession, pk: int) -> list[GetAIProviderModelDetail]:
         """获取供应商模型"""
         ai_provider = await self.get(db=db, pk=pk)
+        if ai_provider.type not in {AIProviderType.openai, AIProviderType.xai, AIProviderType.openrouter}:
+            raise errors.RequestError(msg='当前供应商暂不支持自动同步模型，请手动维护模型列表')
+        url = f'{ai_provider.api_host}/models'
+        headers = {'Authorization': f'Bearer {ai_provider.api_key}'}
         async with httpx.AsyncClient(timeout=10) as client:
-            url = f'{ai_provider.api_host}/v1/models'
-            headers = {'Authorization': f'Bearer {ai_provider.api_key}'}
             try:
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
-            except Exception as e:
+                payload = response.json()
+                return [GetAIProviderModelDetail(**data) for data in payload['data']]
+            except httpx.HTTPError as e:
                 log.error(f'获取供应商模型列表失败：{e}')
                 raise errors.ForbiddenError(msg='获取供应商模型列表失败，请稍后重试')
-            else:
-                return [GetAIProviderModelDetail(**data) for data in response.json()['data']]
+            except ValueError as e:
+                log.error(f'供应商模型列表 JSON 解析失败：{e}')
+                raise errors.RequestError(msg='供应商返回的模型数据不是合法 JSON') from e
+            except (KeyError, TypeError, ValidationError) as e:
+                log.error(f'供应商模型列表数据格式错误：{e}')
+                raise errors.RequestError(msg='供应商返回的模型数据格式不正确') from e
 
     async def sync_models(self, *, db: AsyncSession, pk: int) -> None:
         """
@@ -62,6 +72,9 @@ class AIProviderService:
         """
         provider_models = await self.get_models(db=db, pk=pk)
         await ai_model_dao.delete_by_provider(db, pk)
+        if not provider_models:
+            return
+
         await ai_model_dao.bulk_create(
             db,
             [
@@ -109,8 +122,7 @@ class AIProviderService:
         :param obj: 创建供应商参数
         :return:
         """
-        if obj.api_host.endswith('/'):
-            raise errors.RequestError(msg='API 请求地址不能以 `/` 结尾')
+        obj = obj.model_copy(update={'api_host': obj.api_host.rstrip('/')})
         await ai_provider_dao.create(db, obj)
 
     @staticmethod
@@ -123,8 +135,11 @@ class AIProviderService:
         :param obj: 更新供应商参数
         :return:
         """
-        count = await ai_provider_dao.update(db, pk, obj)
-        return count
+        ai_provider = await ai_provider_dao.get(db, pk)
+        if not ai_provider:
+            raise errors.NotFoundError(msg='供应商不存在')
+        obj = obj.model_copy(update={'api_host': obj.api_host.rstrip('/')})
+        return await ai_provider_dao.update(db, pk, obj)
 
     @staticmethod
     async def delete(*, db: AsyncSession, obj: DeleteAIProviderParam) -> int:

@@ -33,8 +33,8 @@ async def get_ai_provider_models(
     db: CurrentSession,
     pk: Annotated[int, Path(description='provider ID')],
 ) -> ResponseSchemaModel[list[GetAIProviderModelDetail]]:
-    ai_provider_modes = await ai_provider_service.get_models(db=db, pk=pk)
-    return response_base.success(data=ai_provider_modes)
+    ai_provider_models = await ai_provider_service.get_models(db=db, pk=pk)
+    return response_base.success(data=ai_provider_models)
 
 
 @router.get('/{pk}/models/sync', summary='同步供应商模型', dependencies=[DependsJwtAuth])

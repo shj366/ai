@@ -2,9 +2,9 @@ from fastapi import APIRouter
 
 from backend.core.conf import settings
 from backend.plugin.ai.api.v1.chat import router as chat_router
+from backend.plugin.ai.api.v1.mcp import router as mcp_router
 from backend.plugin.ai.api.v1.model import router as model_router
 from backend.plugin.ai.api.v1.provider import router as provider_router
-from backend.plugin.ai.api.v1.mcp import router as mcp_router
 
 v1 = APIRouter(prefix=settings.FASTAPI_API_V1_PATH)
 

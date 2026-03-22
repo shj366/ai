@@ -8,7 +8,7 @@ class AIChatSchemaBase(SchemaBase):
 
     max_tokens: int | None = Field(default=None, description='停止前最多可生成的 token 数')
     temperature: float | None = Field(default=1.0, description='模型生成文本的随机性')
-    top_p: float | None = Field(default=1.0, description='模型生成文本的多样性')
+    top_p: float | None = Field(default=None, description='模型生成文本的多样性')
     timeout: float | None = Field(default=None, description='覆盖客户端对请求的默认超时（单位：s）')
     parallel_tool_calls: bool | None = Field(default=True, description='是否允许并行工具调用')
     seed: int | None = Field(default=None, description='用于模型的随机种子')

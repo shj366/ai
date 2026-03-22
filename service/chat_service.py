@@ -3,17 +3,16 @@ import json
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from pydantic_ai import Agent, ModelResponse, ModelSettings, TextPart
+from pydantic_ai import ModelResponse, TextPart
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
 from backend.plugin.ai.schema.chat import AIChat
-from backend.plugin.ai.utils.message_parse import to_chat_message
+from backend.plugin.ai.utils.chat_control import build_model_settings, chat_agent
+from backend.plugin.ai.utils.message_parse import make_chat_message, to_chat_message
 from backend.plugin.ai.utils.model_control import get_pydantic_model
-
-chat_agent = Agent(name='fba_chat')
 
 
 class ChatService:
@@ -42,26 +41,12 @@ class ChatService:
         if not model.status:
             raise errors.RequestError(msg='此模型暂不可用，请更换模型或联系系统管理员')
 
-        yield json.dumps({'role': 'user', 'content': chat.user_prompt}, ensure_ascii=False).encode('utf-8') + b'\n'
+        yield (
+            json.dumps(make_chat_message(role='user', content=chat.user_prompt), ensure_ascii=False).encode('utf-8')
+            + b'\n'
+        )
 
-        model_settings = {
-            k: v
-            for k, v in {
-                'max_tokens': chat.max_tokens,
-                'temperature': chat.temperature,
-                'top_p': chat.top_p,
-                'timeout': chat.timeout,
-                'parallel_tool_calls': chat.parallel_tool_calls,
-                'seed': chat.seed,
-                'presence_penalty': chat.presence_penalty,
-                'frequency_penalty': chat.frequency_penalty,
-                'logit_bias': chat.logit_bias,
-                'stop_sequences': chat.stop_sequences,
-                'extra_headers': chat.extra_headers,
-                'extra_body': chat.extra_body,
-            }.items()
-            if v is not None
-        }
+        model_settings = build_model_settings(chat=chat, provider_type=provider.type)
 
         async with chat_agent.run_stream(
             chat.user_prompt,
@@ -70,12 +55,12 @@ class ChatService:
                 model_name=model.model_id,
                 api_key=provider.api_key,
                 base_url=provider.api_host,
-                model_settings=ModelSettings(**model_settings),
+                model_settings=model_settings,
             ),
         ) as result:
             async for text in result.stream_output(debounce_by=0.01):
                 message = ModelResponse(parts=[TextPart(text)], model_name=model.model_id, timestamp=result.timestamp())
-                yield json.dumps(to_chat_message(message)).encode('utf-8') + b'\n'
+                yield json.dumps(to_chat_message(message), ensure_ascii=False).encode('utf-8') + b'\n'
 
 
 ai_chat_service: ChatService = ChatService()

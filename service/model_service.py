@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.model import AIModel
@@ -13,7 +14,7 @@ class AIModelService:
     """AI 模型服务"""
 
     @staticmethod
-    async def get(*, db: AsyncSession, pk: int) -> AIModel | None:
+    async def get(*, db: AsyncSession, pk: int) -> AIModel:
         """
         获取 AI 模型
 
@@ -21,7 +22,10 @@ class AIModelService:
         :param pk: 模型 ID
         :return:
         """
-        return await ai_model_dao.get(db, pk)
+        ai_model = await ai_model_dao.get(db, pk)
+        if not ai_model:
+            raise errors.NotFoundError(msg='模型不存在')
+        return ai_model
 
     @staticmethod
     async def get_list(db: AsyncSession) -> dict[str, Any]:
@@ -42,8 +46,8 @@ class AIModelService:
         :param db: 数据库会话
         :return:
         """
-        ai_providers = await ai_model_dao.get_all(db)
-        return ai_providers
+        ai_models = await ai_model_dao.get_all(db)
+        return ai_models
 
     @staticmethod
     async def create(*, db: AsyncSession, obj: CreateAIModelParam) -> None:
@@ -66,8 +70,10 @@ class AIModelService:
         :param obj: 更新模型参数
         :return:
         """
-        count = await ai_model_dao.update(db, pk, obj)
-        return count
+        ai_model = await ai_model_dao.get(db, pk)
+        if not ai_model:
+            raise errors.NotFoundError(msg='模型不存在')
+        return await ai_model_dao.update(db, pk, obj)
 
     @staticmethod
     async def delete(*, db: AsyncSession, obj: DeleteAIModelParam) -> int:

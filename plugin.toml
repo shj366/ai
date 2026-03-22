@@ -1,9 +1,9 @@
 [plugin]
-summary = 'AI 工具'
+summary = 'AI'
 version = '0.0.1'
 description = '为系统提供 AI 赋能'
 author = 'wu-clan'
-tags = ['ai', 'mcp']
+tags = ['ai', 'mcp', 'agent']
 database = ['mysql', 'postgresql']
 
 [app]

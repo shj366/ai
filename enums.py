@@ -6,11 +6,9 @@ class AIProviderType(IntEnum):
 
     openai = 0
     anthropic = 1
-    gemini = 2
-    bedrock = 3
-    groq = 4
-    mistral = 5
-    openrouter = 6
+    google = 2
+    xai = 3
+    openrouter = 4
 
 
 class McpType(IntEnum):
