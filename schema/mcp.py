@@ -9,11 +9,11 @@ from backend.plugin.ai.enums import McpType
 
 class McpSchemaBase(SchemaBase):
     name: str = Field(description='MCP 名称')
+    command: str = Field(description='MCP 命令')
     type: McpType = Field(McpType.stdio, description='MCP 类型')
     description: str | None = Field(None, description='MCP 描述')
     url: HttpUrl | None = Field(None, description='MCP 端点链接')
     headers: str | None = Field(None, description='请求 MCP 端点时的请求头')
-    command: str | None = Field(None, description='MCP 命令')
     args: list[str] | None = Field(None, description='MCP 命令参数')
     env: dict[str, Any] | None = Field(None, description='MCP 环境变量')
     timeout: float | None = Field(5, description='客户端初始化超时时间（秒）')
