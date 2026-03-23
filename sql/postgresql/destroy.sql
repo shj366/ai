@@ -1,6 +1,7 @@
 delete from sys_menu
 where name in (
     'AIChat',
+    'AIQuickPhraseManage',
     'AIProviderManage',
     'AddAIProvider',
     'EditAIProvider',

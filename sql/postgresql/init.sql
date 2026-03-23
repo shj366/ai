@@ -21,7 +21,10 @@ begin
     returning id into ai_model_menu_id;
 
     insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-    values ('MCP 管理', 'AIMcpManage', '/plugins/ai/mcp', 4, 'simple-icons:modelcontextprotocol', 1, '/plugins/ai/views/index', null, 1, 1, 1, '', null, ai_menu_id, now(), null)
+    values ('快捷短语', 'AIQuickPhraseManage', '/plugins/ai/quick-phrase', 4, 'mdi:lightning-bolt-outline', 1, '/plugins/ai/views/index', null, 1, 1, 1, '', null, ai_menu_id, now(), null);
+
+    insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
+    values ('MCP 管理', 'AIMcpManage', '/plugins/ai/mcp', 5, 'simple-icons:modelcontextprotocol', 1, '/plugins/ai/views/index', null, 1, 1, 1, '', null, ai_menu_id, now(), null)
     returning id into ai_mcp_menu_id;
 
     insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
