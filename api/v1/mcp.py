@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from backend.common.pagination import DependsPagination, PageData, paging_data
+from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
@@ -41,8 +41,7 @@ async def get_mcps_paginated(
     name: Annotated[str | None, Query(description='MCP 名称')] = None,
     type: Annotated[int | None, Query(description='MCP 类型')] = None,
 ) -> ResponseSchemaModel[PageData[GetMcpDetail]]:
-    mcp_select = await mcp_service.get_select(name=name, type=type)
-    page_data = await paging_data(db, mcp_select)
+    page_data = await mcp_service.get_list(db=db, name=name, type=type)
     return response_base.success(data=page_data)
 
 

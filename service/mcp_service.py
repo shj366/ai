@@ -1,9 +1,10 @@
 from collections.abc import Sequence
+from typing import Any
 
-from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
+from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_mcp import mcp_dao
 from backend.plugin.ai.model import Mcp
 from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
@@ -25,17 +26,6 @@ class McpService:
         return mcp
 
     @staticmethod
-    async def get_select(*, name: str | None, type: int | None) -> Select:
-        """
-        获取 MCP 查询对象
-
-        :param name: MCP 名称
-        :param type: MCP 类型
-        :return:
-        """
-        return await mcp_dao.get_select(name=name, type=type)
-
-    @staticmethod
     async def get_all(*, db: AsyncSession) -> Sequence[Mcp]:
         """
         获取所有 MCP
@@ -45,6 +35,19 @@ class McpService:
         """
         mcps = await mcp_dao.get_all(db)
         return mcps
+
+    @staticmethod
+    async def get_list(*, db: AsyncSession, name: str | None, type: int | None) -> dict[str, Any]:
+        """
+        获取 MCP 列表
+
+        :param db: 数据库会话
+        :param name: MCP 名称
+        :param type: MCP 类型
+        :return:
+        """
+        mcp_select = await mcp_dao.get_select(name=name, type=type)
+        return await paging_data(db, mcp_select)
 
     @staticmethod
     async def create(*, db: AsyncSession, obj: CreateMcpParam) -> None:

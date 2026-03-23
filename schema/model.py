@@ -34,6 +34,6 @@ class GetAIModelDetail(AIModelSchemaBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    created_time: datetime
-    updated_time: datetime | None = None
+    id: int = Field(description='模型 ID')
+    created_time: datetime = Field(description='创建时间')
+    updated_time: datetime | None = Field(default=None, description='更新时间')

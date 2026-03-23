@@ -1,7 +1,7 @@
 from pydantic_ai import Agent, ModelSettings
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.schema.chat import AIChat
+from backend.plugin.ai.schema.chat import AIChatParam
 
 chat_agent = Agent(name='fba_chat')
 
@@ -69,7 +69,7 @@ SUPPORTED_MODEL_SETTINGS: dict[AIProviderType, frozenset[str]] = {
 }
 
 
-def build_model_settings(*, chat: AIChat, provider_type: int) -> ModelSettings:
+def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSettings:
     supported_keys = SUPPORTED_MODEL_SETTINGS.get(AIProviderType(provider_type), frozenset())
     raw_settings = {
         'max_tokens': chat.max_tokens,

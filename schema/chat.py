@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 
 from backend.common.schema import SchemaBase
@@ -20,9 +22,22 @@ class AIChatSchemaBase(SchemaBase):
     extra_body: object | None = Field(default=None, description='发送给模型的额外请求体')
 
 
-class AIChat(AIChatSchemaBase):
-    """聊天参数"""
+class AIChatParam(AIChatSchemaBase):
+    """AI 聊天参数"""
 
+    conversation_id: str | None = Field(default=None, description='会话 ID，不传则创建新会话')
+    edit_message_index: int | None = Field(default=None, description='编辑并重发的用户消息索引')
+    regenerate_message_index: int | None = Field(default=None, description='重新生成的 AI 消息索引')
     provider_id: int = Field(description='供应商 ID')
     model_id: str = Field(description='聊天模型')
-    user_prompt: str = Field(description='用户提示词')
+    user_prompt: str | None = Field(default=None, description='用户提示词')
+
+
+class GetAIChatMessageDetail(SchemaBase):
+    """AI 聊天消息详情"""
+
+    message_index: int = Field(description='消息索引')
+    role: Literal['user', 'model'] = Field(description='消息角色')
+    timestamp: str = Field(description='消息时间')
+    content: str = Field(description='消息内容')
+    conversation_id: str | None = Field(default=None, description='会话 ID')
