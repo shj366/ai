@@ -1,14 +1,27 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from pydantic_ai import ModelSettings
+from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic_ai import ModelSettings, NativeOutput, PromptedOutput, ToolOutput
 from pydantic_ai.models.anthropic import AnthropicModelSettings
 from pydantic_ai.models.google import GoogleModelSettings
 from pydantic_ai.models.openai import OpenAIChatModelSettings
-from pydantic_ai.models.openrouter import OpenRouterModelSettings
+from pydantic_ai.models.openrouter import OpenRouterModelSettings, OpenRouterReasoning
 from pydantic_ai.models.xai import XaiModelSettings
 
-from backend.plugin.ai.enums import AIProviderType
+from backend.common.exception import errors
+from backend.plugin.ai.enums import AIChatOutputModeType, AIProviderType
 from backend.plugin.ai.schema.chat import AIChatParam
+
+if TYPE_CHECKING:
+    from anthropic.types.beta import BetaThinkingConfigEnabledParam
+    from google.genai.types import ThinkingConfigDict
+    from openai.types.shared.reasoning_effort import ReasoningEffort
+
+
+class StructuredOutputBase(BaseModel):
+    """结构化输出基础模型"""
+
+    model_config = ConfigDict(extra='forbid')
 
 
 def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSettings | Any:
@@ -19,6 +32,7 @@ def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSetti
     :param provider_type: 供应商类型
     :return:
     """
+    provider = AIProviderType(provider_type)
     common_settings = {
         'max_tokens': chat.max_tokens,
         'temperature': chat.temperature,
@@ -34,36 +48,55 @@ def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSetti
         'extra_body': chat.extra_body,
     }
 
-    provider = AIProviderType(provider_type)
     if provider == AIProviderType.openai:
+        openai_reasoning_effort: ReasoningEffort = None
+        match chat.reasoning_effort:
+            case 'none':
+                openai_reasoning_effort = 'none'
+            case 'minimal':
+                openai_reasoning_effort = 'minimal'
+            case 'low':
+                openai_reasoning_effort = 'low'
+            case 'medium':
+                openai_reasoning_effort = 'medium'
+            case 'high':
+                openai_reasoning_effort = 'high'
+            case 'xhigh':
+                openai_reasoning_effort = 'xhigh'
         return OpenAIChatModelSettings(
             **{k: v for k, v in common_settings.items() if v is not None},
-            openai_reasoning_effort=chat.reasoning_effort,
-            openai_reasoning_summary=chat.reasoning_summary,
+            openai_reasoning_effort=openai_reasoning_effort,
         )
+
     if provider == AIProviderType.anthropic:
+        anthropic_thinking: BetaThinkingConfigEnabledParam | None = None
+        if chat.include_thinking:
+            anthropic_thinking: BetaThinkingConfigEnabledParam = {
+                'type': 'enabled',
+                'budget_tokens': 2048,
+            }
         return AnthropicModelSettings(
             **{
                 k: v
                 for k, v in common_settings.items()
                 if k not in {'seed', 'presence_penalty', 'frequency_penalty', 'logit_bias'} and v is not None
             },
-            anthropic_thinking={
-                'type': 'enabled',
-                'budget_tokens': 2048,
-            }
-            if chat.include_thinking
-            else None,
+            anthropic_thinking=anthropic_thinking,
         )
+
     if provider == AIProviderType.google:
+        google_thinking_config: ThinkingConfigDict | None = None
+        if chat.include_thinking:
+            google_thinking_config: ThinkingConfigDict = {'include_thoughts': True}
         return GoogleModelSettings(
             **{
                 k: v
                 for k, v in common_settings.items()
                 if k not in {'parallel_tool_calls', 'logit_bias', 'extra_body'} and v is not None
             },
-            google_thinking_config={'include_thoughts': chat.include_thinking} if chat.include_thinking else None,
+            google_thinking_config=google_thinking_config,
         )
+
     if provider == AIProviderType.xai:
         return XaiModelSettings(
             **{
@@ -71,17 +104,92 @@ def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSetti
                 for k, v in common_settings.items()
                 if k not in {'seed', 'logit_bias', 'extra_body'} and v is not None
             },
-            xai_reasoning_effort=chat.reasoning_effort,
         )
+
     if provider == AIProviderType.openrouter:
+        openrouter_reasoning: OpenRouterReasoning | None = None
+        if chat.include_thinking or chat.reasoning_effort:
+            openrouter_reasoning: OpenRouterReasoning = {
+                'enabled': chat.include_thinking,
+            }
+            if chat.reasoning_effort == 'low':
+                openrouter_reasoning['effort'] = 'low'
+            elif chat.reasoning_effort == 'medium':
+                openrouter_reasoning['effort'] = 'medium'
+            elif chat.reasoning_effort == 'high':
+                openrouter_reasoning['effort'] = 'high'
         return OpenRouterModelSettings(
             **{k: v for k, v in common_settings.items() if v is not None},
-            openrouter_reasoning={
-                'enabled': chat.include_thinking,
-                'effort': chat.reasoning_effort,
-                'summary': chat.reasoning_summary,
-            }
-            if chat.include_thinking or chat.reasoning_effort or chat.reasoning_summary
-            else None,
+            openrouter_reasoning=openrouter_reasoning,
         )
+
     return ModelSettings(**{k: v for k, v in common_settings.items() if v is not None})
+
+
+def build_schema_type(schema: dict[str, Any], *, model_name: str) -> Any:
+    schema_type = schema.get('type')
+    if isinstance(schema_type, list):
+        non_null_types = [item for item in schema_type if item != 'null']
+        if len(non_null_types) == 1:
+            return build_schema_type({**schema, 'type': non_null_types[0]}, model_name=model_name) | None
+        return Any
+
+    if schema_type == 'string':
+        return str
+    if schema_type == 'integer':
+        return int
+    if schema_type == 'number':
+        return float
+    if schema_type == 'boolean':
+        return bool
+    if schema_type == 'null':
+        return None
+    if schema_type == 'array':
+        return list[Any]
+    if schema_type == 'object' or 'properties' in schema:
+        fields: dict[str, tuple[Any, Any]] = {}
+        required = set(schema.get('required', []))
+        for field_name, field_schema in schema.get('properties', {}).items():
+            field_type = build_schema_type(field_schema, model_name=f'{model_name}{field_name.title()}')
+            if field_name in required:
+                fields[field_name] = (field_type, Field(description=field_schema.get('description', field_name)))
+            else:
+                fields[field_name] = (
+                    field_type | None,
+                    Field(default=None, description=field_schema.get('description', field_name)),
+                )
+        if not fields:
+            return dict[str, Any]
+        return create_model(model_name, __base__=StructuredOutputBase, **fields)
+
+    if 'anyOf' in schema:
+        variants = [build_schema_type(item, model_name=f'{model_name}Variant') for item in schema['anyOf']]
+        if not variants:
+            return Any
+        variant_type = variants[0]
+        for item in variants[1:]:
+            variant_type = variant_type | item
+        return variant_type
+
+    return Any
+
+
+def build_output_type(*, chat: AIChatParam) -> Any:
+    if chat.output_mode == AIChatOutputModeType.text:
+        return str
+    if not chat.output_schema:
+        raise errors.RequestError(msg='结构化输出模式必须提供 output_schema')
+
+    schema_type = build_schema_type(
+        chat.output_schema,
+        model_name=chat.output_schema_name or 'ChatStructuredOutput',
+    )
+
+    if chat.output_mode == AIChatOutputModeType.tool:
+        return ToolOutput(schema_type, name=chat.output_schema_name, description=chat.output_schema_description)
+    if chat.output_mode == AIChatOutputModeType.native:
+        return NativeOutput(schema_type, name=chat.output_schema_name)
+    if chat.output_mode == AIChatOutputModeType.prompted:
+        return PromptedOutput(schema_type, name=chat.output_schema_name, description=chat.output_schema_description)
+
+    raise errors.RequestError(msg='不支持的输出模式')

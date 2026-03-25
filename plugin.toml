@@ -10,4 +10,5 @@ database = ['mysql', 'postgresql']
 router = ['v1']
 
 [settings]
+AI_HTTP_MAX_RETRIES = 5
 AI_CHAT_MAX_RETRIES = 5

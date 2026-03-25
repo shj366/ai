@@ -10,7 +10,7 @@ from backend.common.pagination import cursor_paging_data
 from backend.plugin.ai.crud.crud_chat_history import ai_chat_history_dao
 from backend.plugin.ai.crud.crud_chat_message import ai_chat_message_dao
 from backend.plugin.ai.model import AIChatHistory, AIChatMessage
-from backend.plugin.ai.schema.chat import GetAIChatMessageDetail, UpdateAIChatMessageParam
+from backend.plugin.ai.schema.chat import UpdateAIChatMessageParam
 from backend.plugin.ai.schema.chat_history import (
     DeleteAIChatMessageResult,
     GetAIChatConversationDetail,
@@ -18,7 +18,7 @@ from backend.plugin.ai.schema.chat_history import (
     UpdateAIChatConversationPinParam,
     UpdateAIChatHistoryParam,
 )
-from backend.plugin.ai.utils.message_parse import build_chat_transcript, to_chat_messages
+from backend.plugin.ai.utils.message_parse import to_chat_messages
 from backend.utils.timezone import timezone
 
 
@@ -115,14 +115,11 @@ class AIChatHistoryService:
             db=db, conversation_id=conversation_id, user_id=user_id
         )
         message_ids = [row.id for row in message_rows]
-        messages = [
-            GetAIChatMessageDetail.model_validate(message)
-            for message in to_chat_messages(
-                model_messages,
-                conversation_id=chat_history.conversation_id,
-                message_ids=message_ids,
-            )
-        ]
+        messages = to_chat_messages(
+            model_messages,
+            conversation_id=chat_history.conversation_id,
+            message_ids=message_ids,
+        )
         return GetAIChatConversationDetail(
             id=chat_history.id,
             conversation_id=chat_history.conversation_id,
@@ -332,7 +329,6 @@ class AIChatHistoryService:
             return DeleteAIChatMessageResult(deleted_conversation=True, remaining_message_count=0)
 
         remaining_message_rows = [row for row in message_rows if row.id != message_id]
-        # 删除中间消息后，剩余消息需要重新连续编号，否则后续按索引读取会错位。
         await ai_chat_message_dao.delete(db, conversation_id)
         await ai_chat_message_dao.bulk_create(
             db,
@@ -347,7 +343,6 @@ class AIChatHistoryService:
                 for index, row in enumerate(remaining_message_rows)
             ],
         )
-        # 会话上保存的是最后一次使用的 provider/model，删除消息后要按剩余最后一条同步。
         payload = UpdateAIChatHistoryParam(
             conversation_id=chat_history.conversation_id,
             title=chat_history.title,
@@ -357,9 +352,7 @@ class AIChatHistoryService:
             pinned_time=chat_history.pinned_time,
         )
         await ai_chat_history_dao.update(db, chat_history.id, payload)
-        remaining_message_count = len(
-            build_chat_transcript(remaining_messages, conversation_id=chat_history.conversation_id)
-        )
+        remaining_message_count = len(to_chat_messages(remaining_messages))
         return DeleteAIChatMessageResult(
             deleted_conversation=False,
             remaining_message_count=remaining_message_count,

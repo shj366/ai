@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Request
-from starlette.responses import StreamingResponse
+from fastapi.sse import EventSourceResponse
 
 from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
@@ -26,8 +26,10 @@ async def create_ai_chat_completion(
     request: Request,
     db: CurrentSessionTransaction,
     chat: AIChatParam,
-) -> StreamingResponse:
-    return StreamingResponse(ai_chat_service.stream_messages(db=db, chat=chat, user_id=request.user.id))
+) -> EventSourceResponse:
+    return EventSourceResponse(
+        ai_chat_service.stream_messages(db=db, chat=chat, user_id=request.user.id),
+    )
 
 
 @router.get(
