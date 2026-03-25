@@ -1,11 +1,15 @@
+import json
+
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio, MCPServerStreamableHTTP
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_mcp import mcp_dao
+from backend.plugin.ai.enums import McpType
 from backend.plugin.ai.model import Mcp
 from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
 
@@ -35,6 +39,52 @@ class McpService:
         """
         mcps = await mcp_dao.get_all(db)
         return mcps
+
+    @staticmethod
+    async def get_toolsets(*, db: AsyncSession, mcp_ids: list[int]) -> list[Any]:
+        """
+        获取 MCP 工具集
+
+        :param db: 数据库会话
+        :param mcp_ids: MCP ID 列表
+        :return:
+        """
+        mcps = await mcp_dao.get_by_ids(db, mcp_ids)
+        toolsets: list[Any] = []
+        for mcp in mcps:
+            headers = json.loads(mcp.headers) if mcp.headers else None
+            if McpType(mcp.type) == McpType.stdio:
+                toolsets.append(
+                    MCPServerStdio(
+                        command=mcp.command,
+                        args=mcp.args or [],
+                        env=mcp.env or {},
+                        timeout=mcp.timeout,
+                    )
+                )
+            elif McpType(mcp.type) == McpType.sse:
+                if not mcp.url:
+                    raise errors.RequestError(msg=f'MCP 缺少 SSE URL: {mcp.name}')
+                toolsets.append(
+                    MCPServerSSE(
+                        url=mcp.url,
+                        headers=headers,
+                        timeout=mcp.timeout,
+                        read_timeout=mcp.read_timeout,
+                    )
+                )
+            else:
+                if not mcp.url:
+                    raise errors.RequestError(msg=f'MCP 缺少 Streamable HTTP URL: {mcp.name}')
+                toolsets.append(
+                    MCPServerStreamableHTTP(
+                        url=mcp.url,
+                        headers=headers,
+                        timeout=mcp.timeout,
+                        read_timeout=mcp.read_timeout,
+                    )
+                )
+        return toolsets
 
     @staticmethod
     async def get_list(*, db: AsyncSession, name: str | None, type: int | None) -> dict[str, Any]:

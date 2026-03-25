@@ -7,7 +7,7 @@ from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSession, CurrentSessionTransaction
-from backend.plugin.ai.schema.chat import AIChatParam
+from backend.plugin.ai.schema.chat import AIChatParam, UpdateAIChatMessageParam
 from backend.plugin.ai.schema.chat_history import (
     DeleteAIChatMessageResult,
     GetAIChatConversationDetail,
@@ -125,7 +125,7 @@ async def clear_ai_chat_conversation_messages(
 
 
 @router.delete(
-    '/conversations/{conversation_id}/messages/{message_index}',
+    '/conversations/{conversation_id}/messages/{message_id}',
     summary='删除指定聊天消息',
     dependencies=[DependsJwtAuth],
 )
@@ -133,12 +133,36 @@ async def delete_ai_chat_conversation_message(
     request: Request,
     db: CurrentSessionTransaction,
     conversation_id: Annotated[str, Path(description='会话 ID')],
-    message_index: Annotated[int, Path(ge=0, description='消息索引')],
+    message_id: Annotated[int, Path(gt=0, description='消息 ID')],
 ) -> ResponseSchemaModel[DeleteAIChatMessageResult]:
     data = await ai_chat_history_service.delete_message(
         db=db,
         conversation_id=conversation_id,
         user_id=request.user.id,
-        message_index=message_index,
+        message_id=message_id,
     )
     return response_base.success(data=data)
+
+
+@router.put(
+    '/conversations/{conversation_id}/messages/{message_id}',
+    summary='编辑保存指定用户消息',
+    dependencies=[DependsJwtAuth],
+)
+async def update_ai_chat_conversation_message(
+    request: Request,
+    db: CurrentSessionTransaction,
+    conversation_id: Annotated[str, Path(description='会话 ID')],
+    message_id: Annotated[int, Path(gt=0, description='消息 ID')],
+    obj: UpdateAIChatMessageParam,
+) -> ResponseModel:
+    count = await ai_chat_history_service.update_message(
+        db=db,
+        conversation_id=conversation_id,
+        user_id=request.user.id,
+        message_id=message_id,
+        obj=obj,
+    )
+    if count > 0:
+        return response_base.success()
+    return response_base.fail()

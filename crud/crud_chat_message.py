@@ -38,6 +38,17 @@ class CRUDAIChatMessage(CRUDPlus[AIChatMessage]):
         """
         await self.bulk_create_models(db, objs)
 
+    async def update(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
+        """
+        更新消息
+
+        :param db: 数据库会话
+        :param pk: 消息 ID
+        :param obj: 更新内容
+        :return:
+        """
+        return await self.update_model(db, pk, obj)
+
     async def delete(self, db: AsyncSession, conversation_id: str) -> int:
         """
         删除会话全部消息

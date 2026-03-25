@@ -21,6 +21,16 @@ class CRUDMcp(CRUDPlus[Mcp]):
         """
         return await self.select_model(db, pk)
 
+    async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[Mcp]:
+        """
+        获取指定 MCP 列表
+
+        :param db: 数据库会话
+        :param pks: MCP ID 列表
+        :return:
+        """
+        return await self.select_models(db, id__in=pks)
+
     async def get_by_name(self, db: AsyncSession, name: str) -> Mcp | None:
         """
         通过名称获取 MCP

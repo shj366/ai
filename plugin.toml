@@ -8,3 +8,6 @@ database = ['mysql', 'postgresql']
 
 [app]
 router = ['v1']
+
+[settings]
+AI_CHAT_MAX_RETRIES = 2
