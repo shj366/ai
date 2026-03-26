@@ -14,9 +14,6 @@ from backend.plugin.ai.crud.crud_chat_message import ai_chat_message_dao
 from backend.plugin.ai.model import AIChatHistory, AIChatMessage
 from backend.plugin.ai.schema.chat import (
     AIChatParam,
-    CreateAIChatParam,
-    EditAIChatParam,
-    RegenerateAIChatParam,
     UpdateAIChatMessageParam,
 )
 from backend.plugin.ai.schema.chat_history import (
@@ -224,21 +221,21 @@ class AIChatHistoryService:
         chat_history: AIChatHistory | None = None
         existing_message_rows: list[AIChatMessage] = []
         message_history: list[ModelMessage] = []
-        prompt = chat.user_prompt if isinstance(chat, (CreateAIChatParam, EditAIChatParam)) else None
-        should_emit_user_message = not isinstance(chat, RegenerateAIChatParam)
+        prompt = chat.user_prompt if chat.mode in {'create', 'edit'} else None
+        should_emit_user_message = chat.mode != 'regenerate'
 
         if chat.conversation_id:
             chat_history = await self.get(db=db, conversation_id=conversation_id, user_id=user_id)
             existing_message_rows = list(await ai_chat_message_dao.get_all(db, conversation_id))
 
-            if isinstance(chat, EditAIChatParam):
+            if chat.mode == 'edit':
                 chat_history, _, message_history = await self.get_editable_message(
                     db=db,
                     conversation_id=conversation_id,
                     user_id=user_id,
                     message_id=chat.edit_message_id,
                 )
-            elif isinstance(chat, RegenerateAIChatParam):
+            elif chat.mode == 'regenerate':
                 chat_history, prompt, message_history = await self.get_regeneratable_message(
                     db=db,
                     conversation_id=conversation_id,

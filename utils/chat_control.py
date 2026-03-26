@@ -9,7 +9,7 @@ from pydantic_ai.models.openrouter import OpenRouterModelSettings, OpenRouterRea
 from pydantic_ai.models.xai import XaiModelSettings
 
 from backend.common.exception import errors
-from backend.plugin.ai.enums import AIChatOutputModeType, AIProviderType
+from backend.plugin.ai.enums import AIChatOutputModeType, AIChatReasoningEffortType, AIProviderType
 from backend.plugin.ai.schema.chat import AIChatParam
 
 if TYPE_CHECKING:
@@ -51,17 +51,17 @@ def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSetti
     if provider == AIProviderType.openai:
         openai_reasoning_effort: ReasoningEffort = None
         match chat.reasoning_effort:
-            case 'none':
+            case AIChatReasoningEffortType.none:
                 openai_reasoning_effort = 'none'
-            case 'minimal':
+            case AIChatReasoningEffortType.minimal:
                 openai_reasoning_effort = 'minimal'
-            case 'low':
+            case AIChatReasoningEffortType.low:
                 openai_reasoning_effort = 'low'
-            case 'medium':
+            case AIChatReasoningEffortType.medium:
                 openai_reasoning_effort = 'medium'
-            case 'high':
+            case AIChatReasoningEffortType.high:
                 openai_reasoning_effort = 'high'
-            case 'xhigh':
+            case AIChatReasoningEffortType.xhigh:
                 openai_reasoning_effort = 'xhigh'
         return OpenAIChatModelSettings(
             **{k: v for k, v in common_settings.items() if v is not None},
@@ -112,11 +112,11 @@ def build_model_settings(*, chat: AIChatParam, provider_type: int) -> ModelSetti
             openrouter_reasoning: OpenRouterReasoning = {
                 'enabled': chat.include_thinking,
             }
-            if chat.reasoning_effort == 'low':
+            if chat.reasoning_effort == AIChatReasoningEffortType.low:
                 openrouter_reasoning['effort'] = 'low'
-            elif chat.reasoning_effort == 'medium':
+            elif chat.reasoning_effort == AIChatReasoningEffortType.medium:
                 openrouter_reasoning['effort'] = 'medium'
-            elif chat.reasoning_effort == 'high':
+            elif chat.reasoning_effort == AIChatReasoningEffortType.high:
                 openrouter_reasoning['effort'] = 'high'
         return OpenRouterModelSettings(
             **{k: v for k, v in common_settings.items() if v is not None},

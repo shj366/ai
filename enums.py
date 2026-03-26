@@ -20,6 +20,17 @@ class AIProviderType(IntEnum):
             AIProviderType.openrouter: '/api/v1',
         }[self]
 
+    @property
+    def supports_builtin_web_search(self) -> bool:
+        """是否支持模型内置网络搜索"""
+
+        return self in {
+            AIProviderType.anthropic,
+            AIProviderType.google,
+            AIProviderType.xai,
+            AIProviderType.openrouter,
+        }
+
 
 class McpType(IntEnum):
     """Mcp 类型"""
@@ -60,3 +71,22 @@ class AIChatOutputModeType(StrEnum):
     tool = 'tool'
     native = 'native'
     prompted = 'prompted'
+
+
+class AIWebSearchType(StrEnum):
+    """网络搜索模式"""
+
+    builtin = 'builtin'
+    tavily = 'tavily'
+    duckduckgo = 'duckduckgo'
+
+
+class AIChatReasoningEffortType(StrEnum):
+    """聊天模型推理强度"""
+
+    none = 'none'
+    minimal = 'minimal'
+    low = 'low'
+    medium = 'medium'
+    high = 'high'
+    xhigh = 'xhigh'

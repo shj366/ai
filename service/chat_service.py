@@ -42,13 +42,14 @@ from backend.plugin.ai.enums import (
     AIChatMessageRoleType,
     AIChatOutputModeType,
 )
-from backend.plugin.ai.schema.chat import AIChatParam, CreateAIChatParam, EditAIChatParam
+from backend.plugin.ai.schema.chat import AIChatParam
 from backend.plugin.ai.schema.chat_history import CreateAIChatHistoryParam, UpdateAIChatHistoryParam
 from backend.plugin.ai.service.chat_history_service import ai_chat_history_service
 from backend.plugin.ai.service.mcp_service import mcp_service
 from backend.plugin.ai.tools.chat_builtin_tools import register_chat_builtin_tools
 from backend.plugin.ai.utils.chat_control import build_model_settings, build_output_type
 from backend.plugin.ai.utils.model_control import get_provider_model
+from backend.plugin.ai.utils.web_search import build_chat_search_tools
 from backend.utils.timezone import timezone
 
 
@@ -164,7 +165,7 @@ class ChatService:
         next_message_index = prepared.next_message_index
         should_emit_user_message = prepared.should_emit_user_message
         preserved_prefix_count = prepared.preserved_prefix_count
-        request_attachments = chat.attachments if isinstance(chat, (CreateAIChatParam, EditAIChatParam)) else None
+        request_attachments = chat.attachments if chat.mode in {'create', 'edit'} else None
 
         # 将前端附件参数归一化为 pydantic-ai 可直接消费的多模态输入对象
         attachments: list[Any] = []
@@ -198,6 +199,7 @@ class ChatService:
         model_settings = build_model_settings(chat=chat, provider_type=provider.type)
         output_type = build_output_type(chat=chat)
         toolsets = await mcp_service.get_toolsets(db=db, mcp_ids=chat.mcp_ids) if chat.mcp_ids else []
+        tools, builtin_tools = build_chat_search_tools(web_search=chat.web_search, provider_type=provider.type)
         model_instance = get_provider_model(
             provider_type=provider.type,
             model_name=model.model_id,
@@ -212,7 +214,9 @@ class ChatService:
             deps_type=ChatAgentDeps,
             model=model_instance,
             output_type=output_type,
+            tools=tools,
             toolsets=toolsets,
+            builtin_tools=builtin_tools,
         )
 
         # 注册项目内置工具

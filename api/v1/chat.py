@@ -25,10 +25,10 @@ router = APIRouter()
     '/completions',
     summary='文本生成（对话）',
     description=(
-        '统一聊天入口，支持三种请求模式：'
-        '1. 普通发送：传 `user_prompt`，`conversation_id` 可不传'
-        '2. 编辑重发：传 `conversation_id`、`edit_message_id`、`user_prompt`'
-        '3. 重新生成：传 `conversation_id`、`regenerate_message_id`，无需再传 `user_prompt`'
+        '统一聊天入口，使用 `mode` 作为判别字段，支持三种请求模式：'
+        '1. `mode=create`：普通发送，传 `user_prompt`，`conversation_id` 可不传；'
+        '2. `mode=edit`：编辑重发，传 `conversation_id`、`edit_message_id`、`user_prompt`；'
+        '3. `mode=regenerate`：重新生成，传 `conversation_id`、`regenerate_message_id`，无需再传 `user_prompt`。'
     ),
     dependencies=[DependsJwtAuth],
 )
