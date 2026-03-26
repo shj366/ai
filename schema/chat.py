@@ -33,7 +33,7 @@ class AIChatModelSettingsParam(SchemaBase):
 class AIChatReasoningParam(SchemaBase):
     """聊天模型思考推理参数"""
 
-    include_thinking: bool = Field(default=False, description='是否返回模型思考链')
+    include_thinking: bool = Field(default=True, description='是否返回模型思考链')
     reasoning_effort: AIChatReasoningEffortType | None = Field(default=None, description='模型推理强度')
 
 
