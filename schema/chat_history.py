@@ -67,7 +67,6 @@ class GetAIChatConversationDetail(SchemaBase):
     title: str = Field(description='会话标题')
     provider_id: int = Field(description='供应商 ID')
     model_id: str = Field(description='模型 ID')
-    is_pinned: bool = Field(description='是否置顶')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
     messages: list[GetAIChatMessageDetail] = Field(description='对话消息列表')

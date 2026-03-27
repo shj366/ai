@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
 from backend.plugin.ai.model import AIChatMessage
+from backend.utils.timezone import timezone
 
 
 class CRUDAIChatMessage(CRUDPlus[AIChatMessage]):
@@ -36,7 +37,16 @@ class CRUDAIChatMessage(CRUDPlus[AIChatMessage]):
         :param objs: 消息列表
         :return:
         """
-        await self.bulk_create_models(db, objs)
+        now = timezone.now()
+        payloads = [
+            {
+                **obj,
+                'created_time': obj.get('created_time', now),
+                'updated_time': obj.get('updated_time'),
+            }
+            for obj in objs
+        ]
+        await self.bulk_create_models(db, payloads)
 
     async def update(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
         """

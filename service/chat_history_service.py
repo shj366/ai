@@ -60,11 +60,7 @@ class AIChatHistoryService:
         return chat_history
 
     @staticmethod
-    async def get_list(
-        *,
-        db: AsyncSession,
-        user_id: int,
-    ) -> dict[str, Any]:
+    async def get_list(*, db: AsyncSession, user_id: int) -> dict[str, Any]:
         """
         获取聊天历史列表
 
@@ -76,12 +72,12 @@ class AIChatHistoryService:
         page_data = await cursor_paging_data(db, chat_history_select)
         page_data['items'] = [
             {
-                'id': item.id,
-                'conversation_id': item.conversation_id,
-                'title': item.title,
-                'is_pinned': item.pinned_time is not None,
-                'created_time': item.created_time,
-                'updated_time': item.updated_time,
+                'id': item['id'],
+                'conversation_id': item['conversation_id'],
+                'title': item['title'],
+                'is_pinned': item['pinned_time'] is not None,
+                'created_time': item['created_time'],
+                'updated_time': item['updated_time'],
             }
             for item in page_data['items']
         ]
@@ -129,7 +125,6 @@ class AIChatHistoryService:
             title=chat_history.title,
             provider_id=chat_history.provider_id,
             model_id=chat_history.model_id,
-            is_pinned=chat_history.pinned_time is not None,
             created_time=chat_history.created_time,
             updated_time=chat_history.updated_time,
             messages=messages,
