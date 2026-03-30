@@ -9,17 +9,6 @@ from backend.core.conf import settings
 from backend.plugin.ai.enums import AIProviderType, AIWebSearchType
 
 
-def supports_builtin_web_search(provider_type: int) -> bool:
-    """
-    判断当前供应商是否支持模型内置网络搜索
-
-    :param provider_type: 供应商类型
-    :return:
-    """
-
-    return AIProviderType(provider_type).supports_builtin_web_search
-
-
 def build_chat_search_tools(*, web_search: AIWebSearchType, provider_type: int) -> tuple[list[Any], list[Any]]:
     """
     构建聊天搜索工具。
@@ -33,7 +22,12 @@ def build_chat_search_tools(*, web_search: AIWebSearchType, provider_type: int) 
     builtin_tools: list[Any] = []
 
     if web_search == AIWebSearchType.builtin:
-        if supports_builtin_web_search(provider_type):
+        if AIProviderType(provider_type) in {
+            AIProviderType.anthropic,
+            AIProviderType.google,
+            AIProviderType.xai,
+            AIProviderType.openrouter,
+        }:
             builtin_tools.append(WebSearchTool())
         return tools, builtin_tools
 

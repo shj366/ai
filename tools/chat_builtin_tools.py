@@ -13,7 +13,7 @@ def register_chat_builtin_tools(agent: Agent) -> None:
     @agent.tool
     def get_current_time(_: RunContext[Any]) -> str:
         """获取当前时间"""
-        return timezone.now().isoformat()
+        return timezone.to_str(timezone.now())
 
     @agent.tool
     async def list_my_quick_phrases(ctx: RunContext[Any]) -> list[dict[str, Any]]:

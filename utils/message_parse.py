@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from pydantic_ai import (
+    AudioUrl,
     BinaryContent,
     DocumentUrl,
     FilePart,
@@ -11,21 +12,83 @@ from pydantic_ai import (
     TextPart,
     ThinkingPart,
     UserPromptPart,
+    VideoUrl,
 )
 
-from backend.plugin.ai.enums import AIMessageRoleType
+from backend.plugin.ai.enums import AIChatAttachmentSourceType, AIChatAttachmentType, AIMessageRoleType
 from backend.plugin.ai.schema.message import GetAIMessageAttachmentDetail, GetAIMessageDetail
 from backend.utils.timezone import timezone
 
 
-def to_messages(  # noqa: C901
+def get_attachment_type(content: BinaryContent) -> AIChatAttachmentType:
+    """
+    获取二进制附件类型
+
+    :param content: 二进制内容
+    :return:
+    """
+    if content.is_image:
+        return AIChatAttachmentType.image
+    if content.is_audio:
+        return AIChatAttachmentType.audio
+    if content.is_video:
+        return AIChatAttachmentType.video
+    return AIChatAttachmentType.document
+
+
+def build_attachment_detail(
+    attachment: ImageUrl | AudioUrl | VideoUrl | DocumentUrl | BinaryContent,
+) -> GetAIMessageAttachmentDetail:
+    """
+    构建消息附件详情
+
+    :param attachment: 附件
+    :return:
+    """
+    if isinstance(attachment, ImageUrl):
+        return GetAIMessageAttachmentDetail(
+            type=AIChatAttachmentType.image,
+            source_type=AIChatAttachmentSourceType.url,
+            mime_type=attachment.media_type,
+            url=attachment.url,
+        )
+    if isinstance(attachment, AudioUrl):
+        return GetAIMessageAttachmentDetail(
+            type=AIChatAttachmentType.audio,
+            source_type=AIChatAttachmentSourceType.url,
+            mime_type=attachment.media_type,
+            url=attachment.url,
+        )
+    if isinstance(attachment, VideoUrl):
+        return GetAIMessageAttachmentDetail(
+            type=AIChatAttachmentType.video,
+            source_type=AIChatAttachmentSourceType.url,
+            mime_type=attachment.media_type,
+            url=attachment.url,
+        )
+    if isinstance(attachment, DocumentUrl):
+        return GetAIMessageAttachmentDetail(
+            type=AIChatAttachmentType.document,
+            source_type=AIChatAttachmentSourceType.url,
+            mime_type=attachment.media_type,
+            url=attachment.url,
+        )
+    return GetAIMessageAttachmentDetail(
+        type=get_attachment_type(attachment),
+        source_type=AIChatAttachmentSourceType.base64,
+        mime_type=attachment.media_type,
+        url=attachment.data_uri,
+    )
+
+
+def serialize_messages(  # noqa: C901
     messages: Sequence[ModelMessage],
     *,
     conversation_id: str | None = None,
     message_ids: Sequence[int | None] | None = None,
 ) -> list[GetAIMessageDetail]:
     """
-    将模型消息序列转换为前端消息列表
+    序列化模型消息
 
     :param messages: 模型消息序列
     :param conversation_id: 对话 ID
@@ -35,12 +98,6 @@ def to_messages(  # noqa: C901
     parsed_messages: list[GetAIMessageDetail] = []
     for model_message_index, message in enumerate(messages):
         message_id = message_ids[model_message_index] if message_ids else None
-        metadata = message.metadata or {}
-        is_error = bool(metadata.get('is_error', False))
-        error_message = metadata.get('error_message')
-        structured_data = metadata.get('structured_data')
-        if error_message is not None:
-            error_message = str(error_message)
 
         if isinstance(message, ModelRequest) and message.parts:
             first_part = message.parts[0]
@@ -54,32 +111,8 @@ def to_messages(  # noqa: C901
                         if isinstance(item, str):
                             text_parts.append(item)
                             continue
-                        if isinstance(item, ImageUrl):
-                            attachments.append(
-                                GetAIMessageAttachmentDetail(
-                                    type='image',
-                                    mime_type=item.media_type,
-                                    url=item.url,
-                                )
-                            )
-                            continue
-                        if isinstance(item, DocumentUrl):
-                            attachments.append(
-                                GetAIMessageAttachmentDetail(
-                                    type='document',
-                                    mime_type=item.media_type,
-                                    url=item.url,
-                                )
-                            )
-                            continue
-                        if isinstance(item, BinaryContent):
-                            attachments.append(
-                                GetAIMessageAttachmentDetail(
-                                    type='image' if item.is_image else 'document',
-                                    mime_type=item.media_type,
-                                    url=item.data_uri,
-                                )
-                            )
+                        if isinstance(item, (ImageUrl, AudioUrl, VideoUrl, DocumentUrl, BinaryContent)):
+                            attachments.append(build_attachment_detail(item))
                 parsed_messages.append(
                     GetAIMessageDetail(
                         message_id=message_id,
@@ -89,9 +122,6 @@ def to_messages(  # noqa: C901
                         content=' '.join(text_parts).strip(),
                         attachments=attachments,
                         conversation_id=conversation_id,
-                        is_error=is_error,
-                        error_message=error_message,
-                        structured_data=structured_data,
                     )
                 )
             continue
@@ -119,20 +149,12 @@ def to_messages(  # noqa: C901
                             role=AIMessageRoleType.model,
                             timestamp=timestamp,
                             content='',
-                            attachments=[
-                                GetAIMessageAttachmentDetail(
-                                    type='image' if part.content.is_image else 'document',
-                                    mime_type=part.content.media_type,
-                                    url=part.content.data_uri,
-                                )
-                            ],
+                            attachments=[build_attachment_detail(part.content)],
                             conversation_id=conversation_id,
-                            is_error=is_error,
-                            error_message=error_message,
-                            structured_data=structured_data,
                         )
                     )
                 continue
+
             parsed_messages.append(
                 GetAIMessageDetail(
                     message_id=message_id,
@@ -142,9 +164,7 @@ def to_messages(  # noqa: C901
                     content=content,
                     attachments=[],
                     conversation_id=conversation_id,
-                    is_error=is_error,
-                    error_message=error_message,
-                    structured_data=structured_data,
                 )
             )
+
     return parsed_messages

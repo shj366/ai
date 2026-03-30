@@ -5,7 +5,6 @@ from pydantic import ConfigDict, Field
 from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import (
     AIChatGenerationType,
-    AIChatOutputModeType,
     AIChatReasoningEffortType,
     AIWebSearchType,
 )
@@ -54,10 +53,6 @@ class AIChatOutputParam(SchemaBase):
     """聊天输出控制参数"""
 
     generation_type: AIChatGenerationType = Field(default=AIChatGenerationType.text, description='生成类型')
-    output_mode: AIChatOutputModeType = Field(default=AIChatOutputModeType.text, description='输出模式')
-    output_schema: dict[str, Any] | None = Field(default=None, description='结构化输出 JSON Schema')
-    output_schema_name: str | None = Field(default=None, description='结构化输出名称')
-    output_schema_description: str | None = Field(default=None, description='结构化输出说明')
 
 
 class AIChatForwardedPropsParam(

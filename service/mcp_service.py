@@ -16,6 +16,18 @@ from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
 
 class McpService:
     @staticmethod
+    def parse_json_value(value: Any) -> Any:
+        """
+        解析 JSON 字段值
+
+        :param value: 原始值
+        :return:
+        """
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
+    @staticmethod
     async def get(*, db: AsyncSession, pk: int) -> Mcp:
         """
         获取 MCP
@@ -52,17 +64,23 @@ class McpService:
         mcps = await mcp_dao.get_by_ids(db, mcp_ids)
         toolsets: list[Any] = []
         for mcp in mcps:
-            headers = json.loads(mcp.headers) if mcp.headers else None
-            if McpType(mcp.type) == McpType.stdio:
+            headers = McpService.parse_json_value(mcp.headers) if mcp.headers else None
+            if mcp.type == McpType.stdio:
+                args = McpService.parse_json_value(mcp.args) if mcp.args else []
+                env = McpService.parse_json_value(mcp.env) if mcp.env else {}
+                if not isinstance(args, list):
+                    raise errors.RequestError(msg=f'MCP 命令参数格式非法: {mcp.name}')
+                if not isinstance(env, dict):
+                    raise errors.RequestError(msg=f'MCP 环境变量格式非法: {mcp.name}')
                 toolsets.append(
                     MCPServerStdio(
                         command=mcp.command,
-                        args=mcp.args or [],
-                        env=mcp.env or {},
+                        args=[str(arg) for arg in args],
+                        env={str(key): str(value) for key, value in env.items()},
                         timeout=mcp.timeout,
                     )
                 )
-            elif McpType(mcp.type) == McpType.sse:
+            elif mcp.type == McpType.sse:
                 if not mcp.url:
                     raise errors.RequestError(msg=f'MCP 缺少 SSE URL: {mcp.name}')
                 toolsets.append(

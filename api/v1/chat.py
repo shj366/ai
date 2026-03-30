@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
-from fastapi.responses import Response
 from pydantic_ai.ui import SSE_CONTENT_TYPE
+from starlette.responses import StreamingResponse
 
 from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSessionTransaction
@@ -17,7 +17,7 @@ router = APIRouter()
 async def create_ai_chat_completion(
     request: Request,
     db: CurrentSessionTransaction,
-) -> Response:
+) -> StreamingResponse:
     return await ai_chat_service.create_completion(
         db=db,
         user_id=request.user.id,

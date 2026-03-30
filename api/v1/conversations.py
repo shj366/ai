@@ -9,7 +9,6 @@ from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.ai.schema.conversation import (
     ClearAIConversationContextResult,
-    DeleteAIMessageResult,
     GetAIConversationDetail,
     GetAIConversationListItem,
     UpdateAIConversationPinnedParam,
@@ -126,14 +125,16 @@ async def delete_conversation_message(
     db: CurrentSessionTransaction,
     pk: Annotated[str, Path(description='对话 ID')],
     message_id: Annotated[int, Path(gt=0, description='消息 ID')],
-) -> ResponseSchemaModel[DeleteAIMessageResult]:
-    data = await ai_conversation_service.delete_message(
+) -> ResponseModel:
+    count = await ai_conversation_service.delete_message(
         db=db,
         conversation_id=pk,
         user_id=request.user.id,
         message_id=message_id,
     )
-    return response_base.success(data=data)
+    if count > 0:
+        return response_base.success()
+    return response_base.fail()
 
 
 @router.put(

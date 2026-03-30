@@ -10,21 +10,21 @@ from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.schema.conversation import (
     ClearAIConversationContextResult,
-    DeleteAIMessageResult,
     GetAIConversationDetail,
     UpdateAIConversationParam,
     UpdateAIConversationPinnedParam,
     UpdateAIConversationTitleParam,
 )
 from backend.plugin.ai.schema.message import UpdateAIMessageParam
-from backend.plugin.ai.utils.message_parse import to_messages
+from backend.plugin.ai.utils.message_parse import serialize_messages
 from backend.utils.timezone import timezone
 
 
 class AIConversationService:
     """AI 对话服务"""
 
-    async def get(self, *, db: AsyncSession, conversation_id: str, user_id: int) -> GetAIConversationDetail:
+    @staticmethod
+    async def get(*, db: AsyncSession, conversation_id: str, user_id: int) -> GetAIConversationDetail:
         """
         获取对话详情
 
@@ -40,7 +40,7 @@ class AIConversationService:
         model_messages = (
             ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
         )
-        messages = to_messages(
+        messages = serialize_messages(
             model_messages,
             conversation_id=conversation.conversation_id,
             message_ids=[row.id for row in message_rows],
@@ -82,8 +82,8 @@ class AIConversationService:
         ]
         return page_data
 
+    @staticmethod
     async def update(
-        self,
         *,
         db: AsyncSession,
         conversation_id: str,
@@ -109,8 +109,8 @@ class AIConversationService:
             raise errors.RequestError(msg='对话标题过长')
         return await ai_conversation_dao.update_title(db, conversation.id, title)
 
+    @staticmethod
     async def update_pinned_status(
-        self,
         *,
         db: AsyncSession,
         conversation_id: str,
@@ -135,8 +135,8 @@ class AIConversationService:
             timezone.now() if obj.is_pinned else None,
         )
 
+    @staticmethod
     async def update_message(
-        self,
         *,
         db: AsyncSession,
         conversation_id: str,
@@ -179,14 +179,14 @@ class AIConversationService:
         payload['parts'][0]['content'] = content
         return await ai_message_dao.update(db, message_id, {'message': payload})
 
+    @staticmethod
     async def delete_message(
-        self,
         *,
         db: AsyncSession,
         conversation_id: str,
         user_id: int,
         message_id: int,
-    ) -> DeleteAIMessageResult:
+    ) -> int:
         """
         删除指定消息
 
@@ -211,8 +211,7 @@ class AIConversationService:
         del remaining_messages[target_message_index]
         if not remaining_messages:
             await ai_message_dao.delete(db, conversation_id)
-            await ai_conversation_dao.delete(db, conversation_id, user_id)
-            return DeleteAIMessageResult(deleted_conversation=True, remaining_message_count=0)
+            return await ai_conversation_dao.delete(db, conversation_id, user_id)
 
         await ai_message_dao.delete_message(db, message_id)
         remaining_message_rows = [row for row in message_rows if row.id != message_id]
@@ -224,7 +223,7 @@ class AIConversationService:
         if context_start_message_id == message_id:
             previous_rows = message_rows[:target_message_index]
             context_start_message_id = previous_rows[-1].id if previous_rows else None
-        await ai_conversation_dao.update(
+        return await ai_conversation_dao.update(
             db,
             conversation.id,
             UpdateAIConversationParam(
@@ -238,12 +237,9 @@ class AIConversationService:
                 context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
             ),
         )
-        return DeleteAIMessageResult(
-            deleted_conversation=False,
-            remaining_message_count=len(to_messages(remaining_messages)),
-        )
 
-    async def clear_messages(self, *, db: AsyncSession, conversation_id: str, user_id: int) -> int:
+    @staticmethod
+    async def clear_messages(*, db: AsyncSession, conversation_id: str, user_id: int) -> int:
         """
         清空对话消息
 
@@ -271,12 +267,9 @@ class AIConversationService:
         )
         return await ai_message_dao.delete(db, conversation_id)
 
+    @staticmethod
     async def clear_context(
-        self,
-        *,
-        db: AsyncSession,
-        conversation_id: str,
-        user_id: int,
+        *, db: AsyncSession, conversation_id: str, user_id: int
     ) -> ClearAIConversationContextResult:
         """
         清除对话上下文
@@ -311,7 +304,8 @@ class AIConversationService:
             context_cleared_time=context_cleared_time,
         )
 
-    async def delete(self, *, db: AsyncSession, conversation_id: str, user_id: int) -> int:
+    @staticmethod
+    async def delete(*, db: AsyncSession, conversation_id: str, user_id: int) -> int:
         """
         删除对话
 

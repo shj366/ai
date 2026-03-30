@@ -39,13 +39,6 @@ class UpdateAIConversationPinnedParam(SchemaBase):
     is_pinned: bool = Field(description='是否置顶')
 
 
-class DeleteAIMessageResult(SchemaBase):
-    """删除消息结果"""
-
-    deleted_conversation: bool = Field(description='是否删除了整个对话')
-    remaining_message_count: int = Field(description='剩余消息数量')
-
-
 class ClearAIConversationContextResult(SchemaBase):
     """清除对话上下文结果"""
 

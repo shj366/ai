@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi.responses import Response
-from pydantic_ai import Agent, BinaryImage, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+from ag_ui.core import RunAgentInput
+from pydantic_ai import Agent, BinaryImage, ModelMessagesTypeAdapter, ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.builtin_tools import ImageGenerationTool
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
 from backend.common.log import log
@@ -15,7 +16,7 @@ from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
-from backend.plugin.ai.enums import AIChatGenerationType, AIChatOutputModeType, AIProviderType
+from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam, UpdateAIConversationParam
 from backend.plugin.ai.service.mcp_service import mcp_service
@@ -47,12 +48,24 @@ class ChatService:
     """聊天服务"""
 
     @staticmethod
+    def is_user_prompt_message(message: Any) -> bool:
+        """
+        判断是否为用户输入消息
+
+        :param message: 模型消息
+        :return:
+        """
+        return (
+            isinstance(message, ModelRequest) and bool(message.parts) and isinstance(message.parts[0], UserPromptPart)
+        )
+
+    @staticmethod
     def _prepare_run_input(
         body: bytes,
         *,
         default_conversation_id: str | None = None,
         expected_conversation_id: str | None = None,
-    ) -> Any:
+    ) -> RunAgentInput:
         """
         解析并补全 AG-UI 运行参数
 
@@ -77,25 +90,6 @@ class ChatService:
         return run_input
 
     @staticmethod
-    def _parse_forwarded_props(run_input: Any) -> AIChatForwardedPropsParam:
-        """
-        解析聊天扩展参数
-
-        :param run_input: AG-UI 运行参数
-        :return:
-        """
-        forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
-        if forwarded_props.output_mode != AIChatOutputModeType.text:
-            raise errors.RequestError(msg='当前聊天仅支持文本响应')
-        if (
-            forwarded_props.output_schema
-            or forwarded_props.output_schema_name
-            or forwarded_props.output_schema_description
-        ):
-            raise errors.RequestError(msg='当前聊天接口暂不支持结构化输出')
-        return forwarded_props
-
-    @staticmethod
     async def _build_agent(*, db: AsyncSession, forwarded_props: AIChatForwardedPropsParam) -> Agent:
         """
         构建聊天代理
@@ -111,7 +105,7 @@ class ChatService:
         if not provider.status:
             raise errors.RequestError(msg='此供应商暂不可用，请更换供应商或联系系统管理员')
         if forwarded_props.generation_type == AIChatGenerationType.image and provider.type != AIProviderType.google:
-            raise errors.RequestError(msg='当前仅支持 Google 图片生成模型')
+            raise errors.RequestError(msg='当前图片生成仅支持 Google 供应商')
 
         model = await ai_model_dao.get_by_model_and_provider(db, forwarded_props.model_id, forwarded_props.provider_id)
         if not model:
@@ -119,9 +113,9 @@ class ChatService:
         if not model.status:
             raise errors.RequestError(msg='此模型暂不可用，请更换模型或联系系统管理员')
 
-        model_settings = build_model_settings(chat=forwarded_props, provider_type=provider.type)
+        model_settings = build_model_settings(chat_metadata=forwarded_props, provider_type=provider.type)
         toolsets = (
-            await mcp_service.get_toolsets(db=db, mcp_ids=forwarded_props.mcp_ids) if forwarded_props.mcp_ids else []
+            await mcp_service.get_toolsets(db=db, mcp_ids=forwarded_props.mcp_ids) if forwarded_props.mcp_ids else None
         )
         tools, builtin_tools = build_chat_search_tools(
             web_search=forwarded_props.web_search,
@@ -160,7 +154,7 @@ class ChatService:
         require_messages: bool = False,
     ) -> ChatConversationState:
         """
-        加载对话与消息上下文
+        加载对话状态
 
         :param db: 数据库会话
         :param conversation_id: 对话 ID
@@ -187,15 +181,6 @@ class ChatService:
         if require_messages and not message_rows:
             raise errors.RequestError(msg='对话消息不存在')
 
-        model_messages = (
-            list(
-                ModelMessagesTypeAdapter.validate_python(
-                    [row.message for row in message_rows],
-                )
-            )
-            if message_rows
-            else []
-        )
         context_start_index = 0
         if conversation.context_start_message_id is not None:
             boundary_index = next(
@@ -205,27 +190,22 @@ class ChatService:
             if boundary_index is not None:
                 context_start_index = boundary_index + 1
 
+        model_messages = (
+            list(
+                ModelMessagesTypeAdapter.validate_python(
+                    [row.message for row in message_rows],
+                )
+            )
+            if message_rows
+            else []
+        )
+
         return ChatConversationState(
             conversation=conversation,
             message_rows=message_rows,
             model_messages=model_messages,
             context_start_index=context_start_index,
         )
-
-    @staticmethod
-    def _get_message_index(*, message_rows: list[Any], message_id: int) -> int:
-        """
-        查找消息索引
-
-        :param message_rows: 消息记录列表
-        :param message_id: 消息 ID
-        :return:
-        """
-
-        target_index = next((index for index, row in enumerate(message_rows) if row.id == message_id), None)
-        if target_index is None:
-            raise errors.NotFoundError(msg='消息不存在')
-        return target_index
 
     @staticmethod
     def _build_completion_callback(
@@ -236,7 +216,9 @@ class ChatService:
         forwarded_props: AIChatForwardedPropsParam,
         conversation: Any | None,
         title: str,
-        delete_from_message_index: int | None,
+        replace_message_row_ids: list[int] | None,
+        replace_start_message_index: int | None,
+        replace_end_message_index: int | None,
         base_message_index: int,
         result_offset: int,
     ) -> Any:
@@ -249,7 +231,9 @@ class ChatService:
         :param forwarded_props: 聊天扩展参数
         :param conversation: 对话对象
         :param title: 对话标题
-        :param delete_from_message_index: 删除消息起始索引
+        :param replace_message_row_ids: 需要替换的消息 ID 列表
+        :param replace_start_message_index: 替换起始消息索引
+        :param replace_end_message_index: 替换结束消息索引
         :param base_message_index: 新消息起始索引
         :param result_offset: 结果偏移量
         :return:
@@ -258,6 +242,7 @@ class ChatService:
         async def on_complete(result: Any) -> None:
             persisted_messages = to_jsonable_python(list(result.all_messages()))
             assert isinstance(persisted_messages, list)
+            insert_message_index = base_message_index
 
             normalized_title = title or '新对话'
             if len(normalized_title) > 256:
@@ -278,12 +263,56 @@ class ChatService:
             else:
                 await ai_conversation_dao.create(db, CreateAIConversationParam(**payload))
 
-            if delete_from_message_index is not None:
-                await ai_message_dao.delete_after_message_index(db, conversation_id, delete_from_message_index)
-
             tail_messages = persisted_messages[result_offset:]
             if not tail_messages:
                 return
+
+            if (
+                replace_message_row_ids is not None
+                and replace_start_message_index is not None
+                and replace_end_message_index is not None
+            ):
+                replace_count = replace_end_message_index - replace_start_message_index + 1
+                shared_count = min(replace_count, len(tail_messages))
+
+                for index in range(shared_count):
+                    await ai_message_dao.update(
+                        db,
+                        replace_message_row_ids[index],
+                        {
+                            'provider_id': forwarded_props.provider_id,
+                            'model_id': forwarded_props.model_id,
+                            'message_index': replace_start_message_index + index,
+                            'message': tail_messages[index],
+                        },
+                    )
+
+                if len(tail_messages) < replace_count:
+                    await ai_message_dao.delete_message_index_range(
+                        db,
+                        conversation_id,
+                        replace_start_message_index + len(tail_messages),
+                        replace_end_message_index,
+                    )
+                    await ai_message_dao.update_message_indexes_offset(
+                        db,
+                        conversation_id,
+                        replace_end_message_index + 1,
+                        len(tail_messages) - replace_count,
+                    )
+                    return
+
+                if len(tail_messages) == replace_count:
+                    return
+
+                await ai_message_dao.update_message_indexes_offset(
+                    db,
+                    conversation_id,
+                    replace_end_message_index + 1,
+                    len(tail_messages) - replace_count,
+                )
+                tail_messages = tail_messages[replace_count:]
+                insert_message_index = replace_end_message_index + 1
 
             await ai_message_dao.bulk_create(
                 db,
@@ -292,7 +321,7 @@ class ChatService:
                         'conversation_id': conversation_id,
                         'provider_id': forwarded_props.provider_id,
                         'model_id': forwarded_props.model_id,
-                        'message_index': base_message_index + index,
+                        'message_index': insert_message_index + index,
                         'message': message,
                     }
                     for index, message in enumerate(tail_messages)
@@ -304,22 +333,22 @@ class ChatService:
     @staticmethod
     def _stream_response(
         *,
-        agent: Agent,
-        run_input: Any,
-        accept: str | None,
         db: AsyncSession,
         user_id: int,
+        agent: Agent,
+        run_input: RunAgentInput,
+        accept: str | None,
         message_history: list[Any],
         on_complete: Any,
-    ) -> Response:
+    ) -> StreamingResponse:
         """
         运行聊天代理并返回流式响应
 
+        :param db: 数据库会话
+        :param user_id: 用户 ID
         :param agent: 聊天代理
         :param run_input: AG-UI 运行参数
         :param accept: Accept 请求头
-        :param db: 数据库会话
-        :param user_id: 用户 ID
         :param message_history: 消息历史
         :param on_complete: 完成回调
         :return:
@@ -331,10 +360,16 @@ class ChatService:
             message_history=message_history,
             on_complete=on_complete,
         )
-        return adapter.streaming_response(event_stream)
+
+        response = adapter.streaming_response(event_stream)
+        response.headers['X-Accel-Buffering'] = 'no'
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
 
     @staticmethod
-    async def create_completion(*, db: AsyncSession, user_id: int, body: bytes, accept: str | None) -> Response:
+    async def create_completion(
+        *, db: AsyncSession, user_id: int, body: bytes, accept: str | None
+    ) -> StreamingResponse:
         """
         创建流式对话
 
@@ -345,16 +380,14 @@ class ChatService:
         :return:
         """
         run_input = ChatService._prepare_run_input(body)
-
-        forwarded_props = ChatService._parse_forwarded_props(run_input)
         if not run_input.messages:
             raise errors.RequestError(msg='聊天消息不能为空')
 
         try:
             input_messages = list(AGUIAdapter.load_messages(run_input.messages))
         except Exception as e:
-            log.warning(f'AG-UI messages parse failed: error={e}')
-            raise errors.RequestError(msg='AG-UI 消息格式非法') from e
+            log.warning(f'AG-UI messages 加载失败: {e}')
+            raise errors.RequestError(msg='聊天消息格式非法') from e
         if not input_messages:
             raise errors.RequestError(msg='聊天消息不能为空')
 
@@ -380,9 +413,10 @@ class ChatService:
         if not prompt and not has_binary_input:
             raise errors.RequestError(msg='最后一条用户消息不能为空')
 
-        conversation_id = run_input.thread_id
+        forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
         agent = await ChatService._build_agent(db=db, forwarded_props=forwarded_props)
 
+        conversation_id = run_input.thread_id
         state = await ChatService._load_conversation_state(
             db=db,
             conversation_id=conversation_id,
@@ -399,19 +433,56 @@ class ChatService:
             forwarded_props=forwarded_props,
             conversation=state.conversation,
             title=state.conversation.title if state.conversation else prompt,
-            delete_from_message_index=len(state.message_rows) if state.conversation else None,
+            replace_message_row_ids=None,
+            replace_start_message_index=None,
+            replace_end_message_index=None,
             base_message_index=len(state.message_rows),
             result_offset=len(context_messages) if state.conversation else 0,
         )
+
         return ChatService._stream_response(
+            db=db,
+            user_id=user_id,
             agent=agent,
             run_input=run_input,
             accept=accept,
-            db=db,
-            user_id=user_id,
             message_history=message_history,
             on_complete=on_complete,
         )
+
+    @staticmethod
+    def _get_message_index(*, message_rows: list[Any], message_id: int) -> int:
+        """
+        查找消息索引
+
+        :param message_rows: 消息记录列表
+        :param message_id: 消息 ID
+        :return:
+        """
+
+        target_index = next((index for index, row in enumerate(message_rows) if row.id == message_id), None)
+        if target_index is None:
+            raise errors.NotFoundError(msg='消息不存在')
+        return target_index
+
+    @staticmethod
+    def _get_reply_end_index(*, model_messages: list[Any], reply_start_index: int) -> int:
+        """
+        获取当前回复轮次结束索引
+
+        :param model_messages: 模型消息列表
+        :param reply_start_index: 回复起始索引
+        :return:
+        """
+        next_user_message_index = next(
+            (
+                index
+                for index in range(reply_start_index + 1, len(model_messages))
+                if ChatService.is_user_prompt_message(model_messages[index])
+            ),
+            None,
+        )
+        return (next_user_message_index - 1) if next_user_message_index is not None else len(model_messages) - 1
 
     @staticmethod
     async def regenerate_from_user_message(
@@ -422,7 +493,7 @@ class ChatService:
         message_id: int,
         body: bytes,
         accept: str | None,
-    ) -> Response:
+    ) -> StreamingResponse:
         """
         根据用户消息重生成 AI 回复
 
@@ -440,7 +511,7 @@ class ChatService:
             expected_conversation_id=conversation_id,
         )
 
-        forwarded_props = ChatService._parse_forwarded_props(run_input)
+        forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
         agent = await ChatService._build_agent(db=db, forwarded_props=forwarded_props)
         state = await ChatService._load_conversation_state(
             db=db,
@@ -454,13 +525,19 @@ class ChatService:
         target_message = state.model_messages[target_index]
         if not isinstance(target_message, ModelRequest):
             raise errors.RequestError(msg='仅支持根据用户消息重生成')
-        if not target_message.parts or not isinstance(target_message.parts[0], UserPromptPart):
+        if not ChatService.is_user_prompt_message(target_message):
             raise errors.RequestError(msg='仅支持根据用户消息重生成')
         if target_index < state.context_start_index:
             raise errors.RequestError(msg='指定消息已不在当前上下文中')
+        reply_start_index = target_index + 1
+        if reply_start_index >= len(state.model_messages):
+            raise errors.RequestError(msg='当前消息后不存在可重生成的 AI 回复')
+        reply_end_index = ChatService._get_reply_end_index(
+            model_messages=state.model_messages,
+            reply_start_index=reply_start_index,
+        )
 
         message_history = state.model_messages[state.context_start_index : target_index + 1]
-        preserved_history_count = target_index + 1
         on_complete = ChatService._build_completion_callback(
             db=db,
             conversation_id=conversation_id,
@@ -468,16 +545,18 @@ class ChatService:
             forwarded_props=forwarded_props,
             conversation=state.conversation,
             title=state.conversation.title,
-            delete_from_message_index=preserved_history_count,
-            base_message_index=preserved_history_count,
+            replace_message_row_ids=[row.id for row in state.message_rows[reply_start_index : reply_end_index + 1]],
+            replace_start_message_index=reply_start_index,
+            replace_end_message_index=reply_end_index,
+            base_message_index=reply_start_index,
             result_offset=len(message_history),
         )
         return ChatService._stream_response(
+            db=db,
+            user_id=user_id,
             agent=agent,
             run_input=run_input,
             accept=accept,
-            db=db,
-            user_id=user_id,
             message_history=message_history,
             on_complete=on_complete,
         )
@@ -491,7 +570,7 @@ class ChatService:
         message_id: int,
         body: bytes,
         accept: str | None,
-    ) -> Response:
+    ) -> StreamingResponse:
         """
         根据 AI 回复重生成
 
@@ -509,7 +588,7 @@ class ChatService:
             expected_conversation_id=conversation_id,
         )
 
-        forwarded_props = ChatService._parse_forwarded_props(run_input)
+        forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
         agent = await ChatService._build_agent(db=db, forwarded_props=forwarded_props)
         state = await ChatService._load_conversation_state(
             db=db,
@@ -520,7 +599,7 @@ class ChatService:
         )
 
         target_index = ChatService._get_message_index(message_rows=state.message_rows, message_id=message_id)
-        if isinstance(state.model_messages[target_index], ModelRequest):
+        if not isinstance(state.model_messages[target_index], ModelResponse):
             raise errors.RequestError(msg='仅支持根据 AI 回复重生成')
         if target_index < state.context_start_index:
             raise errors.RequestError(msg='指定消息已不在当前上下文中')
@@ -529,15 +608,19 @@ class ChatService:
             (
                 index
                 for index in range(target_index - 1, state.context_start_index - 1, -1)
-                if isinstance(state.model_messages[index], ModelRequest)
+                if ChatService.is_user_prompt_message(state.model_messages[index])
             ),
             None,
         )
         if user_message_index is None:
             raise errors.RequestError(msg='未找到对应的用户消息')
+        reply_start_index = user_message_index + 1
+        reply_end_index = ChatService._get_reply_end_index(
+            model_messages=state.model_messages,
+            reply_start_index=reply_start_index,
+        )
 
         message_history = state.model_messages[state.context_start_index : user_message_index + 1]
-        preserved_history_count = user_message_index + 1
         on_complete = ChatService._build_completion_callback(
             db=db,
             conversation_id=conversation_id,
@@ -545,16 +628,19 @@ class ChatService:
             forwarded_props=forwarded_props,
             conversation=state.conversation,
             title=state.conversation.title,
-            delete_from_message_index=preserved_history_count,
-            base_message_index=preserved_history_count,
+            replace_message_row_ids=[row.id for row in state.message_rows[reply_start_index : reply_end_index + 1]],
+            replace_start_message_index=reply_start_index,
+            replace_end_message_index=reply_end_index,
+            base_message_index=reply_start_index,
             result_offset=len(message_history),
         )
+
         return ChatService._stream_response(
+            db=db,
+            user_id=user_id,
             agent=agent,
             run_input=run_input,
             accept=accept,
-            db=db,
-            user_id=user_id,
             message_history=message_history,
             on_complete=on_complete,
         )

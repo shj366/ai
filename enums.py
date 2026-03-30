@@ -20,17 +20,6 @@ class AIProviderType(IntEnum):
             AIProviderType.openrouter: '/api/v1',
         }[self]
 
-    @property
-    def supports_builtin_web_search(self) -> bool:
-        """是否支持模型内置网络搜索"""
-
-        return self in {
-            AIProviderType.anthropic,
-            AIProviderType.google,
-            AIProviderType.xai,
-            AIProviderType.openrouter,
-        }
-
 
 class McpType(IntEnum):
     """Mcp 类型"""
@@ -69,15 +58,6 @@ class AIMessageRoleType(StrEnum):
     user = 'user'
     thinking = 'thinking'
     model = 'model'
-
-
-class AIChatOutputModeType(StrEnum):
-    """聊天输出模式"""
-
-    text = 'text'
-    tool = 'tool'
-    native = 'native'
-    prompted = 'prompted'
 
 
 class AIWebSearchType(StrEnum):
