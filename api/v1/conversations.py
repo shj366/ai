@@ -7,6 +7,7 @@ from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSession, CurrentSessionTransaction
+from backend.plugin.ai.schema.chat import AIChatCompletionParam
 from backend.plugin.ai.schema.conversation import (
     ClearAIConversationContextResult,
     GetAIConversationDetail,
@@ -171,13 +172,14 @@ async def regenerate_conversation_message(
     db: CurrentSessionTransaction,
     pk: Annotated[str, Path(description='对话 ID')],
     message_id: Annotated[int, Path(gt=0, description='消息 ID')],
+    obj: AIChatCompletionParam,
 ) -> Response:
     return await ai_chat_service.regenerate_from_user_message(
         db=db,
         user_id=request.user.id,
         conversation_id=pk,
         message_id=message_id,
-        body=await request.body(),
+        obj=obj,
         accept=request.headers.get('accept'),
     )
 
@@ -192,13 +194,14 @@ async def regenerate_conversation_response(
     db: CurrentSessionTransaction,
     pk: Annotated[str, Path(description='对话 ID')],
     message_id: Annotated[int, Path(gt=0, description='消息 ID')],
+    obj: AIChatCompletionParam,
 ) -> Response:
     return await ai_chat_service.regenerate_from_response_message(
         db=db,
         user_id=request.user.id,
         conversation_id=pk,
         message_id=message_id,
-        body=await request.body(),
+        obj=obj,
         accept=request.headers.get('accept'),
     )
 

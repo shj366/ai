@@ -1,5 +1,6 @@
 from typing import Any
 
+from ag_ui.core import Context, Message, Tool
 from pydantic import ConfigDict, Field
 
 from backend.common.schema import SchemaBase
@@ -65,3 +66,19 @@ class AIChatForwardedPropsParam(
     """对话扩展参数"""
 
     model_config = ConfigDict(extra='forbid')
+
+
+class AIChatCompletionParam(SchemaBase):
+    """聊天参数"""
+
+    model_config = ConfigDict(extra='forbid')
+
+    # TODO：删除 alias?
+    thread_id: str | None = Field(default=None, alias='threadId', description='对话 ID，不传则后端自动生成')
+    run_id: str | None = Field(default=None, alias='runId', description='运行 ID，不传则后端自动生成')
+    parent_run_id: str | None = Field(default=None, alias='parentRunId', description='父运行 ID')
+    state: dict[str, Any] = Field(default_factory=dict, description='前端状态')
+    messages: list[Message] = Field(description='AG-UI 消息列表，最后一条必须是用户消息')
+    tools: list[Tool] = Field(default_factory=list, description='前端工具定义')
+    context: list[Context] = Field(default_factory=list, description='额外上下文')
+    forwarded_props: AIChatForwardedPropsParam = Field(alias='forwardedProps', description='聊天扩展参数')

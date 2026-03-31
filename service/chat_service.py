@@ -17,7 +17,7 @@ from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
 from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
-from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
+from backend.plugin.ai.schema.chat import AIChatCompletionParam, AIChatForwardedPropsParam
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam, UpdateAIConversationParam
 from backend.plugin.ai.service.mcp_service import mcp_service
 from backend.plugin.ai.tools.chat_builtin_tools import register_chat_builtin_tools
@@ -61,7 +61,7 @@ class ChatService:
 
     @staticmethod
     def _prepare_run_input(
-        body: bytes,
+        obj: AIChatCompletionParam,
         *,
         default_conversation_id: str | None = None,
         expected_conversation_id: str | None = None,
@@ -69,20 +69,18 @@ class ChatService:
         """
         解析并补全 AG-UI 运行参数
 
-        :param body: 请求体
+        :param obj: 请求体
         :param default_conversation_id: 默认对话 ID
         :param expected_conversation_id: 期望对话 ID
         :return:
         """
-        run_input = AGUIAdapter.build_run_input(body)
+        payload = obj.model_dump()
+        if not payload.get('thread_id'):
+            payload['thread_id'] = default_conversation_id or uuid4_str()
+        if not payload.get('run_id'):
+            payload['run_id'] = uuid4_str()
 
-        update: dict[str, Any] = {}
-        if not run_input.thread_id:
-            update['thread_id'] = default_conversation_id or uuid4_str()
-        if not run_input.run_id:
-            update['run_id'] = uuid4_str()
-        if update:
-            run_input = run_input.model_copy(update=update)
+        run_input = RunAgentInput.model_validate(payload)
 
         if expected_conversation_id is not None and run_input.thread_id != expected_conversation_id:
             raise errors.RequestError(msg='请求体中的对话 ID 与路径不一致')
@@ -368,18 +366,18 @@ class ChatService:
 
     @staticmethod
     async def create_completion(
-        *, db: AsyncSession, user_id: int, body: bytes, accept: str | None
+        *, db: AsyncSession, user_id: int, obj: AIChatCompletionParam, accept: str | None
     ) -> StreamingResponse:
         """
         创建流式对话
 
         :param db: 数据库会话
         :param user_id: 用户 ID
-        :param body: 请求体
+        :param obj: 请求体
         :param accept: Accept 请求头
         :return:
         """
-        run_input = ChatService._prepare_run_input(body)
+        run_input = ChatService._prepare_run_input(obj)
         if not run_input.messages:
             raise errors.RequestError(msg='聊天消息不能为空')
 
@@ -491,7 +489,7 @@ class ChatService:
         user_id: int,
         conversation_id: str,
         message_id: int,
-        body: bytes,
+        obj: AIChatCompletionParam,
         accept: str | None,
     ) -> StreamingResponse:
         """
@@ -501,12 +499,12 @@ class ChatService:
         :param user_id: 用户 ID
         :param conversation_id: 对话 ID
         :param message_id: 消息 ID
-        :param body: 请求体
+        :param obj: 请求体
         :param accept: Accept 请求头
         :return:
         """
         run_input = ChatService._prepare_run_input(
-            body,
+            obj,
             default_conversation_id=conversation_id,
             expected_conversation_id=conversation_id,
         )
@@ -568,7 +566,7 @@ class ChatService:
         user_id: int,
         conversation_id: str,
         message_id: int,
-        body: bytes,
+        obj: AIChatCompletionParam,
         accept: str | None,
     ) -> StreamingResponse:
         """
@@ -578,12 +576,12 @@ class ChatService:
         :param user_id: 用户 ID
         :param conversation_id: 对话 ID
         :param message_id: 消息 ID
-        :param body: 请求体
+        :param obj: 请求体
         :param accept: Accept 请求头
         :return:
         """
         run_input = ChatService._prepare_run_input(
-            body,
+            obj,
             default_conversation_id=conversation_id,
             expected_conversation_id=conversation_id,
         )
