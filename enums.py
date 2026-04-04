@@ -9,6 +9,7 @@ class AIProviderType(IntEnum):
     google = 2
     xai = 3
     openrouter = 4
+    openai_responses = 5
 
     @property
     def default_api_path(self) -> str:
@@ -18,6 +19,7 @@ class AIProviderType(IntEnum):
             AIProviderType.google: '/v1beta',
             AIProviderType.xai: '/v1',
             AIProviderType.openrouter: '/api/v1',
+            AIProviderType.openai_responses: '/v1',
         }[self]
 
 
@@ -78,14 +80,14 @@ class AIWebSearchType(StrEnum):
     """网络搜索模式"""
 
     builtin = 'builtin'
+    exa = 'exa'
     tavily = 'tavily'
     duckduckgo = 'duckduckgo'
 
 
-class AIChatReasoningEffortType(StrEnum):
-    """聊天模型推理强度"""
+class AIChatThinkingType(StrEnum):
+    """聊天模型思考强度"""
 
-    none = 'none'
     minimal = 'minimal'
     low = 'low'
     medium = 'medium'

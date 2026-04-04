@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from backend.common.pagination import DependsPagination, PageData
+from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
@@ -28,7 +28,7 @@ async def get_all_ai_providers(db: CurrentSession) -> ResponseSchemaModel[list[G
 
 @router.get('/{pk}', summary='获取供应商详情', dependencies=[DependsJwtAuth])
 async def get_ai_provider(
-    db: CurrentSession, pk: Annotated[int, Path(description='provider ID')]
+    db: CurrentSession, pk: Annotated[int, Path(description='供应商 ID')]
 ) -> ResponseSchemaModel[GetAIProviderDetail]:
     data = await ai_provider_service.get(db=db, pk=pk)
     return response_base.success(data=data)
@@ -37,7 +37,7 @@ async def get_ai_provider(
 @router.get('/{pk}/models', summary='获取供应商模型列表', dependencies=[DependsJwtAuth])
 async def get_ai_provider_models(
     db: CurrentSession,
-    pk: Annotated[int, Path(description='provider ID')],
+    pk: Annotated[int, Path(description='供应商 ID')],
 ) -> ResponseSchemaModel[list[GetAIProviderModelDetail]]:
     data = await ai_provider_service.get_models(db=db, pk=pk)
     return response_base.success(data=data)
@@ -46,7 +46,7 @@ async def get_ai_provider_models(
 @router.get('/{pk}/models/sync', summary='同步供应商模型', dependencies=[DependsJwtAuth])
 async def sync_ai_provider_models(
     db: CurrentSessionTransaction,
-    pk: Annotated[int, Path(description='provider ID')],
+    pk: Annotated[int, Path(description='供应商 ID')],
 ) -> ResponseModel:
     await ai_provider_service.sync_models(db=db, pk=pk)
     return response_base.success()
@@ -57,7 +57,7 @@ async def sync_ai_provider_models(
     summary='分页获取所有供应商',
     dependencies=[
         DependsJwtAuth,
-        DependsPagination,
+        DependsCursorPagination,
     ],
 )
 async def get_ai_providers_paginated(
@@ -65,7 +65,7 @@ async def get_ai_providers_paginated(
     name: Annotated[str | None, Query(description='供应商名称')] = None,
     type: Annotated[int | None, Query(description='供应商类型')] = None,
     status: Annotated[int | None, Query(description='状态')] = None,
-) -> ResponseSchemaModel[PageData[GetAIProviderDetail]]:
+) -> ResponseSchemaModel[CursorPageData[GetAIProviderDetail]]:
     page_data = await ai_provider_service.get_list(db=db, name=name, type=type, status=status)
     return response_base.success(data=page_data)
 

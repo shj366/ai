@@ -10,6 +10,7 @@ from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
 from backend.plugin.ai.schema.model import (
     CreateAIModelParam,
+    CreateAIModelsParam,
     DeleteAIModelParam,
     GetAIModelDetail,
     UpdateAIModelParam,
@@ -68,6 +69,19 @@ async def get_ai_models_paginated(
 )
 async def create_ai_model(db: CurrentSessionTransaction, obj: CreateAIModelParam) -> ResponseModel:
     await ai_model_service.create(db=db, obj=obj)
+    return response_base.success()
+
+
+@router.post(
+    '/batch',
+    summary='批量创建模型',
+    dependencies=[
+        Depends(RequestPermission('ai:model:add')),
+        DependsRBAC,
+    ],
+)
+async def create_ai_models(db: CurrentSessionTransaction, obj: CreateAIModelsParam) -> ResponseModel:
+    await ai_model_service.bulk_create(db=db, obj=obj)
     return response_base.success()
 
 

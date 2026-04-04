@@ -15,6 +15,8 @@ from backend.plugin.ai.schema.conversation import (
 
 
 class CRUDAIConversation(CRUDPlus[AIConversation]):
+    """AI 对话数据库操作类"""
+
     async def get(self, db: AsyncSession, pk: int) -> AIConversation | None:
         """
         获取对话

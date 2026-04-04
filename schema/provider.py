@@ -11,9 +11,9 @@ class AIProviderSchemaBase(SchemaBase):
     """AI 供应商基础模型"""
 
     name: str = Field(description='供应商名称')
-    type: AIProviderType = Field(description='供应商类型（0OpenAI-compatible 1Anthropic 2Google 3xAI 4OpenRouter）')
-    api_key: str = Field(description='API Key')
-    api_host: str = Field(description='API Host')
+    type: AIProviderType = Field(description='供应商类型')
+    api_key: str = Field(description='接口密钥')
+    api_host: str = Field(description='接口地址')
     status: StatusType = Field(description='状态')
     remark: str | None = Field(None, description='备注')
 

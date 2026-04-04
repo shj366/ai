@@ -6,7 +6,7 @@ from pydantic import ConfigDict, Field
 from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import (
     AIChatGenerationType,
-    AIChatReasoningEffortType,
+    AIChatThinkingType,
     AIWebSearchType,
 )
 
@@ -18,11 +18,13 @@ class AIChatModelSelectParam(SchemaBase):
     model_id: str = Field(description='模型 ID')
 
 
-class AIChatReasoningParam(SchemaBase):
-    """聊天模型思考推理参数"""
+class AIChatThinkingParam(SchemaBase):
+    """聊天模型思考参数"""
 
-    include_thinking: bool = Field(default=True, description='是否返回模型思考链')
-    reasoning_effort: AIChatReasoningEffortType | None = Field(default=None, description='模型推理强度')
+    thinking: bool | AIChatThinkingType | None = Field(
+        default=None,
+        description='模型思考模式，支持 true、false 或 minimal/low/medium/high/xhigh',
+    )
 
 
 class AIChatRuntimeParam(SchemaBase):
@@ -37,7 +39,7 @@ class AIChatModelSettingsParam(SchemaBase):
     """聊天模型采样参数"""
 
     max_tokens: int | None = Field(default=None, description='停止前最多可生成的 token 数')
-    temperature: float | None = Field(default=1.0, description='模型生成文本的随机性')
+    temperature: float | None = Field(default=None, description='模型生成文本的随机性')
     top_p: float | None = Field(default=None, description='模型生成文本的多样性')
     timeout: float | None = Field(default=None, description='覆盖客户端对请求的默认超时（单位：s）')
     seed: int | None = Field(default=None, description='用于模型的随机种子')
@@ -47,7 +49,7 @@ class AIChatModelSettingsParam(SchemaBase):
     stop_sequences: list[str] | None = Field(default=None, description='这些序列会导致模型停止生成')
     extra_headers: dict[str, str] | None = Field(default=None, description='发送给模型的额外 Headers')
     extra_body: dict[str, Any] | None = Field(default=None, description='发送给模型的额外请求体')
-    parallel_tool_calls: bool | None = Field(default=True, description='是否允许并行工具调用')
+    parallel_tool_calls: bool | None = Field(default=None, description='是否允许并行工具调用')
 
 
 class AIChatOutputParam(SchemaBase):
@@ -58,7 +60,7 @@ class AIChatOutputParam(SchemaBase):
 
 class AIChatForwardedPropsParam(
     AIChatModelSelectParam,
-    AIChatReasoningParam,
+    AIChatThinkingParam,
     AIChatRuntimeParam,
     AIChatModelSettingsParam,
     AIChatOutputParam,

@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 from pydantic_ai import ModelSettings
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.models.xai import XaiModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -23,8 +23,6 @@ from backend.core.conf import settings
 from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.utils.provider_url import normalize_provider_api_host
 
-PydanticAIModel = OpenAIChatModel | AnthropicModel | GoogleModel | XaiModel | OpenRouterModel
-
 
 def get_provider_model(
     provider_type: int,
@@ -32,7 +30,7 @@ def get_provider_model(
     api_key: str,
     base_url: str,
     model_settings: ModelSettings,
-) -> PydanticAIModel:
+) -> OpenAIChatModel | OpenAIResponsesModel | AnthropicModel | GoogleModel | XaiModel | OpenRouterModel:
     """
     获取供应商模型
 
@@ -65,6 +63,14 @@ def get_provider_model(
     if provider_type == AIProviderType.openai:
         openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=retry_http_client)
         return OpenAIChatModel(
+            model_name,
+            provider=OpenAIProvider(openai_client=openai_client),
+            settings=model_settings,
+        )
+
+    if provider_type == AIProviderType.openai_responses:
+        openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=retry_http_client)
+        return OpenAIResponsesModel(
             model_name,
             provider=OpenAIProvider(openai_client=openai_client),
             settings=model_settings,

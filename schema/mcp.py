@@ -8,6 +8,8 @@ from backend.plugin.ai.enums import McpType
 
 
 class McpSchemaBase(SchemaBase):
+    """MCP 基础模型"""
+
     name: str = Field(description='MCP 名称')
     command: str = Field(description='MCP 命令')
     type: McpType = Field(McpType.stdio, description='MCP 类型')

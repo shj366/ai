@@ -8,7 +8,12 @@ from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.model import AIModel
-from backend.plugin.ai.schema.model import CreateAIModelParam, DeleteAIModelParam, UpdateAIModelParam
+from backend.plugin.ai.schema.model import (
+    CreateAIModelParam,
+    CreateAIModelsParam,
+    DeleteAIModelParam,
+    UpdateAIModelParam,
+)
 
 
 class AIModelService:
@@ -70,6 +75,31 @@ class AIModelService:
         :return:
         """
         await ai_model_dao.create(db, obj)
+
+    @staticmethod
+    async def bulk_create(*, db: AsyncSession, obj: CreateAIModelsParam) -> None:
+        """
+        批量创建 AI 模型
+
+        :param db: 数据库会话
+        :param obj: 批量创建模型参数
+        :return:
+        """
+        pairs = []
+        pair_set = set()
+
+        for item in obj.items:
+            pair = (item.provider_id, item.model_id)
+            if pair in pair_set:
+                raise errors.RequestError(msg='本次请求中存在重复模型，请检查后重试')
+            pair_set.add(pair)
+            pairs.append(pair)
+
+        existed_models = await ai_model_dao.get_by_provider_model_pairs(db, pairs)
+        if existed_models:
+            raise errors.RequestError(msg='存在已添加的模型，请勿重复创建')
+
+        await ai_model_dao.bulk_create(db, [item.model_dump() for item in obj.items])
 
     @staticmethod
     async def update(*, db: AsyncSession, pk: int, obj: UpdateAIModelParam) -> int:

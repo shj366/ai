@@ -10,6 +10,8 @@ from backend.utils.timezone import timezone
 
 
 class CRUDAIMessage(CRUDPlus[AIMessage]):
+    """AI 消息数据库操作类"""
+
     async def get(self, db: AsyncSession, pk: int) -> AIMessage | None:
         """
         获取消息

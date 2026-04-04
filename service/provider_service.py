@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.common.enums import StatusType
 from backend.common.exception import errors
 from backend.common.log import log
-from backend.common.pagination import paging_data
+from backend.common.pagination import cursor_paging_data
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
 from backend.plugin.ai.enums import AIProviderType
@@ -27,6 +27,8 @@ from backend.utils.timezone import timezone
 
 
 class AIProviderService:
+    """AI 供应商服务类"""
+
     @staticmethod
     async def get(*, db: AsyncSession, pk: int) -> AIProvider:
         """
@@ -46,7 +48,12 @@ class AIProviderService:
         ai_provider = await self.get(db=db, pk=pk)
         if ai_provider.status != StatusType.enable:
             raise errors.RequestError(msg='当前供应商已停用，无法获取模型列表')
-        if ai_provider.type not in {AIProviderType.openai, AIProviderType.xai, AIProviderType.openrouter}:
+        if ai_provider.type not in {
+            AIProviderType.openai,
+            AIProviderType.openai_responses,
+            AIProviderType.xai,
+            AIProviderType.openrouter,
+        }:
             raise errors.RequestError(msg='当前供应商暂不支持自动同步模型，请手动维护模型列表')
         url = f'{normalize_provider_api_host(ai_provider.type, ai_provider.api_host)}/models'
         headers = {'Authorization': f'Bearer {ai_provider.api_key}'}
@@ -114,7 +121,7 @@ class AIProviderService:
         :return:
         """
         ai_provider_select = await ai_provider_dao.get_select(name, type, status)
-        return await paging_data(db, ai_provider_select)
+        return await cursor_paging_data(db, ai_provider_select)
 
     @staticmethod
     async def get_all(*, db: AsyncSession) -> Sequence[AIProvider]:
@@ -138,7 +145,7 @@ class AIProviderService:
         """
         parsed = urlsplit(obj.api_host.strip())
         if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-            raise errors.RequestError(msg='API Host 必须是合法的 HTTP(S) 地址')
+            raise errors.RequestError(msg='接口地址必须是合法的 HTTP(S) 地址')
         await ai_provider_dao.create(db, obj)
 
     @staticmethod
@@ -156,7 +163,7 @@ class AIProviderService:
             raise errors.NotFoundError(msg='供应商不存在')
         parsed = urlsplit(obj.api_host.strip())
         if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-            raise errors.RequestError(msg='API Host 必须是合法的 HTTP(S) 地址')
+            raise errors.RequestError(msg='接口地址必须是合法的 HTTP(S) 地址')
         return await ai_provider_dao.update(db, pk, obj)
 
     @staticmethod

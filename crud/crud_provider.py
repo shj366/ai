@@ -10,6 +10,8 @@ from backend.plugin.ai.schema.provider import CreateAIProviderParam, UpdateAIPro
 
 
 class CRUDAIProvider(CRUDPlus[AIProvider]):
+    """AI 供应商数据库操作类"""
+
     async def get(self, db: AsyncSession, pk: int) -> AIProvider | None:
         """
         获取供应商

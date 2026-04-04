@@ -19,6 +19,12 @@ class CreateAIModelParam(AIModelSchemaBase):
     """创建 AI 模型参数"""
 
 
+class CreateAIModelsParam(SchemaBase):
+    """批量创建 AI 模型参数"""
+
+    items: list[CreateAIModelParam] = Field(max_length=200, description='模型列表')
+
+
 class UpdateAIModelParam(AIModelSchemaBase):
     """更新 AI 模型参数"""
 

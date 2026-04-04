@@ -7,9 +7,12 @@ from sqlalchemy_crud_plus import CRUDPlus
 
 from backend.plugin.ai.model import AIModel
 from backend.plugin.ai.schema.model import CreateAIModelParam, UpdateAIModelParam
+from backend.utils.timezone import timezone
 
 
 class CRUDAIModel(CRUDPlus[AIModel]):
+    """AI 模型数据库操作类"""
+
     async def get(self, db: AsyncSession, pk: int) -> AIModel | None:
         """
         获取模型
@@ -67,6 +70,23 @@ class CRUDAIModel(CRUDPlus[AIModel]):
 
         return await self.select_models(db, **filters)
 
+    async def get_by_provider_model_pairs(self, db: AsyncSession, pairs: list[tuple[int, str]]) -> Sequence[AIModel]:
+        """
+        批量获取已存在的模型
+
+        :param db: 数据库会话
+        :param pairs: 供应商 ID 与模型 ID 组合列表
+        :return:
+        """
+        if not pairs:
+            return []
+
+        provider_ids = list({provider_id for provider_id, _ in pairs})
+        model_ids = list({model_id for _, model_id in pairs})
+        pair_set = set(pairs)
+        models = await self.select_models(db, provider_id__in=provider_ids, model_id__in=model_ids)
+        return [model for model in models if (model.provider_id, model.model_id) in pair_set]
+
     async def create(self, db: AsyncSession, obj: CreateAIModelParam) -> None:
         """
         创建模型
@@ -85,7 +105,15 @@ class CRUDAIModel(CRUDPlus[AIModel]):
         :param objs: 批量创建模型参数
         :return:
         """
-        await self.bulk_create_models(db, objs)
+        now = timezone.now()
+        payloads = [
+            {
+                **obj,
+                'created_time': obj.get('created_time', now),
+            }
+            for obj in objs
+        ]
+        await self.bulk_create_models(db, payloads)
 
     async def update(self, db: AsyncSession, pk: int, obj: UpdateAIModelParam) -> int:
         """

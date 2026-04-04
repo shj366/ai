@@ -15,8 +15,10 @@ from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
 
 
 class McpService:
+    """MCP 服务类"""
+
     @staticmethod
-    def parse_json_value(value: Any) -> Any:
+    def _parse_json_value(*, value: Any) -> Any:
         """
         解析 JSON 字段值
 
@@ -64,10 +66,10 @@ class McpService:
         mcps = await mcp_dao.get_by_ids(db, mcp_ids)
         toolsets: list[Any] = []
         for mcp in mcps:
-            headers = McpService.parse_json_value(mcp.headers) if mcp.headers else None
+            headers = McpService._parse_json_value(value=mcp.headers) if mcp.headers else None
             if mcp.type == McpType.stdio:
-                args = McpService.parse_json_value(mcp.args) if mcp.args else []
-                env = McpService.parse_json_value(mcp.env) if mcp.env else {}
+                args = McpService._parse_json_value(value=mcp.args) if mcp.args else []
+                env = McpService._parse_json_value(value=mcp.env) if mcp.env else {}
                 if not isinstance(args, list):
                     raise errors.RequestError(msg=f'MCP 命令参数格式非法: {mcp.name}')
                 if not isinstance(env, dict):
