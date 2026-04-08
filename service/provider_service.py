@@ -22,6 +22,7 @@ from backend.plugin.ai.schema.provider import (
     GetAIProviderModelDetail,
     UpdateAIProviderParam,
 )
+from backend.plugin.ai.utils.api_key_ops import mask_api_key
 from backend.plugin.ai.utils.provider_url import normalize_provider_api_host
 from backend.utils.timezone import timezone
 
@@ -164,7 +165,16 @@ class AIProviderService:
         parsed = urlsplit(obj.api_host.strip())
         if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
             raise errors.RequestError(msg='接口地址必须是合法的 HTTP(S) 地址')
-        return await ai_provider_dao.update(db, pk, obj)
+        update_obj = obj.model_copy(
+            update={
+                'api_key': (
+                    ai_provider.api_key
+                    if not obj.api_key.strip() or obj.api_key == mask_api_key(ai_provider.api_key)
+                    else obj.api_key
+                )
+            }
+        )
+        return await ai_provider_dao.update(db, pk, update_obj)
 
     @staticmethod
     async def delete(*, db: AsyncSession, obj: DeleteAIProviderParam) -> int:

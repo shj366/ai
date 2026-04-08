@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_serializer
 
 from backend.common.enums import StatusType
 from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import AIProviderType
+from backend.plugin.ai.utils.api_key_ops import mask_api_key
 
 
 class AIProviderSchemaBase(SchemaBase):
@@ -40,6 +41,11 @@ class GetAIProviderDetail(AIProviderSchemaBase):
     id: int = Field(description='供应商 ID')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(default=None, description='更新时间')
+
+    @field_serializer('api_key')
+    def serialize_api_key(self, api_key: str) -> str:
+        """脱敏返回接口密钥"""
+        return mask_api_key(api_key)
 
 
 class GetAIProviderModelDetail(SchemaBase):
