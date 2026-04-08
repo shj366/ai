@@ -3,14 +3,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from ag_ui.core import (
-    AudioInputContent,
-    BinaryInputContent,
-    DocumentInputContent,
-    ImageInputContent,
     InputContentDataSource,
     TextInputContent,
-    UserMessage,
-    VideoInputContent,
 )
 from pydantic_ai import (
     AudioUrl,
@@ -25,13 +19,47 @@ from pydantic_ai import (
 
 from backend.common.exception import errors
 from backend.database.db import uuid4_str
+from backend.plugin.ai.schema.ag_ui import (
+    AIChatAudioInputContentSchemaBase,
+    AIChatBinaryInputContentSchemaBase,
+    AIChatDocumentInputContentSchemaBase,
+    AIChatImageInputContentSchemaBase,
+    AIChatUserMessageParam,
+    AIChatVendorMetadataSchemaBase,
+    AIChatVideoInputContentSchemaBase,
+)
 
 if TYPE_CHECKING:
     from pydantic_ai.messages import UploadedFileProviderName
 
 PromptContentItem: TypeAlias = str | AudioUrl | BinaryContent | DocumentUrl | ImageUrl | UploadedFile | VideoUrl
 UserPromptContent: TypeAlias = str | Sequence[PromptContentItem]
-MediaInputPart: TypeAlias = ImageInputContent | AudioInputContent | VideoInputContent | DocumentInputContent
+MediaInputPart: TypeAlias = (
+    AIChatImageInputContentSchemaBase
+    | AIChatAudioInputContentSchemaBase
+    | AIChatVideoInputContentSchemaBase
+    | AIChatDocumentInputContentSchemaBase
+)
+
+
+def build_vendor_metadata_dict(
+    *,
+    vendor_metadata: AIChatVendorMetadataSchemaBase | None,
+    filename: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    构建供应商元数据字典
+
+    :param vendor_metadata: 供应商元数据模型
+    :param filename: 文件名
+    :return:
+    """
+    metadata: dict[str, Any] = {}
+    if vendor_metadata and vendor_metadata.filename:
+        metadata['filename'] = vendor_metadata.filename
+    if filename:
+        metadata['filename'] = filename
+    return metadata or None
 
 
 def build_binary_content(
@@ -87,26 +115,21 @@ def build_file_url_content(
     )
 
 
-def deserialize_binary_input_part(part: BinaryInputContent) -> PromptContentItem:
+def deserialize_binary_input_part(part: AIChatBinaryInputContentSchemaBase) -> PromptContentItem:
     """
     解析二进制输入片段
 
     :param part: 二进制输入片段
     :return:
     """
-    extra = part.model_extra if isinstance(part.model_extra, dict) else {}
-    raw_vendor_metadata = extra.get('vendorMetadata')
-    vendor_metadata = dict(raw_vendor_metadata) if isinstance(raw_vendor_metadata, dict) else {}
-    if part.filename:
-        vendor_metadata['filename'] = part.filename
-    provider_name = extra.get('providerName')
-    if part.id and isinstance(provider_name, str):
+    vendor_metadata = build_vendor_metadata_dict(vendor_metadata=part.vendor_metadata, filename=part.filename)
+    if part.id and part.provider_name:
         return UploadedFile(
             file_id=part.id,
-            provider_name=cast('UploadedFileProviderName', provider_name),
+            provider_name=cast('UploadedFileProviderName', part.provider_name),
             media_type=part.mime_type,
-            identifier=extra.get('identifier') if isinstance(extra.get('identifier'), str) else None,
-            vendor_metadata=vendor_metadata or None,
+            identifier=part.identifier,
+            vendor_metadata=vendor_metadata,
         )
     if part.url:
         try:
@@ -116,20 +139,20 @@ def deserialize_binary_input_part(part: BinaryInputContent) -> PromptContentItem
                 url=part.url,
                 media_type=part.mime_type,
                 identifier=part.id,
-                vendor_metadata=vendor_metadata or None,
+                vendor_metadata=vendor_metadata,
             )
         return build_binary_content(
             data=parsed_binary.data,
             media_type=parsed_binary.media_type,
             identifier=part.id,
-            vendor_metadata=vendor_metadata or None,
+            vendor_metadata=vendor_metadata,
         )
     if part.data:
         return build_binary_content(
             data=b64decode(part.data),
             media_type=part.mime_type,
             identifier=part.id,
-            vendor_metadata=vendor_metadata or None,
+            vendor_metadata=vendor_metadata,
         )
     raise errors.RequestError(msg='聊天消息格式非法')
 
@@ -141,27 +164,27 @@ def deserialize_media_input_part(part: MediaInputPart) -> PromptContentItem:
     :param part: 媒体输入片段
     :return:
     """
-    metadata = part.metadata if isinstance(part.metadata, dict) else {}
+    metadata = part.metadata
     mime_type = (
         part.source.mime_type
         or {
-            ImageInputContent: 'image/*',
-            AudioInputContent: 'audio/*',
-            VideoInputContent: 'video/*',
-            DocumentInputContent: 'application/octet-stream',
+            AIChatImageInputContentSchemaBase: 'image/*',
+            AIChatAudioInputContentSchemaBase: 'audio/*',
+            AIChatVideoInputContentSchemaBase: 'video/*',
+            AIChatDocumentInputContentSchemaBase: 'application/octet-stream',
         }[type(part)]
     )
-    attachment_id = metadata.get('id') if isinstance(metadata.get('id'), str) else uuid4_str()
-    raw_vendor_metadata = metadata.get('vendorMetadata')
-    vendor_metadata = dict(raw_vendor_metadata) if isinstance(raw_vendor_metadata, dict) else {}
-    if isinstance(metadata.get('filename'), str):
-        vendor_metadata['filename'] = metadata['filename']
+    attachment_id = metadata.id if metadata and metadata.id else uuid4_str()
+    vendor_metadata = build_vendor_metadata_dict(
+        vendor_metadata=metadata.vendor_metadata if metadata else None,
+        filename=metadata.filename if metadata else None,
+    )
     if isinstance(part.source, InputContentDataSource):
         return build_binary_content(
             data=b64decode(part.source.value),
             media_type=mime_type,
             identifier=attachment_id,
-            vendor_metadata=vendor_metadata or None,
+            vendor_metadata=vendor_metadata,
         )
     try:
         parsed_binary = BinaryContent.from_data_uri(part.source.value)
@@ -171,17 +194,17 @@ def deserialize_media_input_part(part: MediaInputPart) -> PromptContentItem:
             url=part.source.value,
             media_type=media_type,
             identifier=attachment_id,
-            vendor_metadata=vendor_metadata or None,
+            vendor_metadata=vendor_metadata,
         )
     return build_binary_content(
         data=parsed_binary.data,
         media_type=parsed_binary.media_type,
         identifier=attachment_id,
-        vendor_metadata=vendor_metadata or None,
+        vendor_metadata=vendor_metadata,
     )
 
 
-def deserialize_current_user_message(message: UserMessage) -> ModelRequest:
+def deserialize_current_user_message(message: AIChatUserMessageParam) -> ModelRequest:
     """
     解析当前轮用户消息，保留文件标识和文件名
 
@@ -197,10 +220,18 @@ def deserialize_current_user_message(message: UserMessage) -> ModelRequest:
         if isinstance(part, TextInputContent):
             user_prompt_content.append(part.text)
             continue
-        if isinstance(part, BinaryInputContent):
+        if isinstance(part, AIChatBinaryInputContentSchemaBase):
             user_prompt_content.append(deserialize_binary_input_part(part))
             continue
-        if isinstance(part, (ImageInputContent, AudioInputContent, VideoInputContent, DocumentInputContent)):
+        if isinstance(
+            part,
+            (
+                AIChatImageInputContentSchemaBase,
+                AIChatAudioInputContentSchemaBase,
+                AIChatVideoInputContentSchemaBase,
+                AIChatDocumentInputContentSchemaBase,
+            ),
+        ):
             user_prompt_content.append(deserialize_media_input_part(part))
             continue
         raise errors.RequestError(msg='聊天消息格式非法')

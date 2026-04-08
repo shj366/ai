@@ -1,10 +1,10 @@
 from typing import Any
 
-from ag_ui.core import UserMessage
 from pydantic import ConfigDict, Field
 
 from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import AIChatGenerationType, AIChatThinkingType, AIWebSearchType
+from backend.plugin.ai.schema.ag_ui import AIChatUserMessageParam
 
 
 class AIChatModelSelectParam(SchemaBase):
@@ -78,7 +78,7 @@ class AIChatRequestBase(SchemaBase):
 class AIChatCompletionParam(AIChatRequestBase):
     """聊天参数"""
 
-    message: UserMessage = Field(description='当前轮用户消息')
+    message: AIChatUserMessageParam = Field(description='当前轮用户消息')
 
 
 class AIChatRegenerateParam(AIChatRequestBase):
