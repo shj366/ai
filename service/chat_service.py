@@ -1,7 +1,6 @@
 from functools import partial
 
 from pydantic_ai import ModelRequest, UserPromptPart
-from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -17,10 +16,11 @@ from backend.plugin.ai.chat_runtime import (
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import ChatCompletionPersistence
+from backend.plugin.ai.protocol.ag_ui.input_adapter import deserialize_current_user_message
+from backend.plugin.ai.protocol.ag_ui.serializer import serialize_ag_ui_jsonable_python
 from backend.plugin.ai.schema.chat import AIChatCompletionParam, AIChatForwardedPropsParam
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam
 from backend.plugin.ai.service.conversation_service import ai_conversation_service
-from backend.plugin.ai.utils.ag_ui_input_adapter import deserialize_current_user_message
 from backend.plugin.ai.utils.conversation_control import (
     build_update_ai_conversation_param,
     normalize_generated_conversation_title,
@@ -92,7 +92,7 @@ class ChatService:
         forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
         agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
         conversation_id = run_input.thread_id
-        payload_messages = to_jsonable_python([current_message])
+        payload_messages = serialize_ag_ui_jsonable_python([current_message])
         assert isinstance(payload_messages, list)
         # 使用独立事务先提交用户输入，避免流式阶段异常导致整段会话回滚
         async with async_db_session.begin() as session:

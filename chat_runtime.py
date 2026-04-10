@@ -6,7 +6,6 @@ from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelR
 from pydantic_ai.builtin_tools import AbstractBuiltinTool, CodeExecutionTool, ImageGenerationTool
 from pydantic_ai.capabilities import AbstractCapability, BuiltinTool, Thinking, Toolset
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -20,6 +19,7 @@ from backend.plugin.ai.crud.crud_provider import ai_provider_dao
 from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatCompletionPersistence
 from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
 from backend.plugin.ai.model import AIModel, AIProvider
+from backend.plugin.ai.protocol.ag_ui.serializer import serialize_ag_ui_json, serialize_ag_ui_jsonable_python
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam
 from backend.plugin.ai.service.mcp_service import mcp_service
@@ -208,7 +208,7 @@ async def persist_completion_messages(
     if not messages:
         return
 
-    payload_messages = to_jsonable_python(messages)
+    payload_messages = serialize_ag_ui_jsonable_python(messages)
     assert isinstance(payload_messages, list)
 
     insert_message_index = persistence.base_message_index
@@ -337,7 +337,7 @@ async def ag_ui_event_encoder(stream: AsyncIterator[BaseEvent]) -> AsyncIterator
     :return:
     """
     async for event in stream:
-        yield f'data: {event.model_dump_json(by_alias=False, exclude_none=True)}\n\n'
+        yield f'data: {serialize_ag_ui_json(event, exclude_none=True)}\n\n'
 
 
 def stream_response(

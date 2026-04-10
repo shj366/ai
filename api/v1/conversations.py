@@ -21,7 +21,6 @@ router = APIRouter()
     '/{pk}',
     summary='获取对话详情',
     dependencies=[DependsJwtAuth],
-    response_model_by_alias=False,
 )
 async def get_conversation(
     request: Request,

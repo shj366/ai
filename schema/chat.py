@@ -2,19 +2,19 @@ from typing import Any
 
 from pydantic import ConfigDict, Field
 
-from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import AIChatGenerationType, AIChatThinkingType, AIWebSearchType
-from backend.plugin.ai.schema.ag_ui import AIChatUserMessageParam
+from backend.plugin.ai.protocol.ag_ui.schema import AIChatAgUiUserMessageParam
+from backend.plugin.ai.protocol.chat import AIChatSchemaBase
 
 
-class AIChatModelSelectParam(SchemaBase):
+class AIChatModelSelectParam(AIChatSchemaBase):
     """聊天模型选择参数"""
 
     provider_id: int = Field(description='供应商 ID')
     model_id: str = Field(description='模型 ID')
 
 
-class AIChatThinkingParam(SchemaBase):
+class AIChatThinkingParam(AIChatSchemaBase):
     """聊天模型思考参数"""
 
     thinking: bool | AIChatThinkingType | None = Field(
@@ -23,7 +23,7 @@ class AIChatThinkingParam(SchemaBase):
     )
 
 
-class AIChatRuntimeParam(SchemaBase):
+class AIChatRuntimeParam(AIChatSchemaBase):
     """聊天运行时控制参数"""
 
     enable_builtin_tools: bool = Field(default=True, description='是否启用项目内置工具')
@@ -31,7 +31,7 @@ class AIChatRuntimeParam(SchemaBase):
     web_search: AIWebSearchType = Field(default=AIWebSearchType.builtin, description='网络搜索模式')
 
 
-class AIChatModelSettingsParam(SchemaBase):
+class AIChatModelSettingsParam(AIChatSchemaBase):
     """聊天模型采样参数"""
 
     max_tokens: int | None = Field(default=None, description='停止前最多可生成的 token 数')
@@ -48,7 +48,7 @@ class AIChatModelSettingsParam(SchemaBase):
     parallel_tool_calls: bool | None = Field(default=None, description='是否允许并行工具调用')
 
 
-class AIChatOutputParam(SchemaBase):
+class AIChatOutputParam(AIChatSchemaBase):
     """聊天输出控制参数"""
 
     generation_type: AIChatGenerationType = Field(default=AIChatGenerationType.text, description='生成类型')
@@ -66,7 +66,7 @@ class AIChatForwardedPropsParam(
     model_config = ConfigDict(extra='forbid')
 
 
-class AIChatRequestBase(SchemaBase):
+class AIChatRequestBase(AIChatSchemaBase):
     """聊天请求基础参数"""
 
     model_config = ConfigDict(extra='forbid')
@@ -78,7 +78,7 @@ class AIChatRequestBase(SchemaBase):
 class AIChatCompletionParam(AIChatRequestBase):
     """聊天参数"""
 
-    message: AIChatUserMessageParam = Field(description='当前轮用户消息')
+    message: AIChatAgUiUserMessageParam = Field(description='当前轮用户消息')
 
 
 class AIChatRegenerateParam(AIChatRequestBase):

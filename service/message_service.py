@@ -117,6 +117,7 @@ class AIMessageService:
             conversation_id=conversation_id,
             user_id=user_id,
         )
+        assert conversation is not None, '对话不存在'
         await ai_conversation_dao.update(
             db,
             conversation.id,
@@ -358,6 +359,7 @@ class AIMessageService:
             conversation_id=conversation_id,
             user_id=user_id,
         )
+        assert conversation is not None, '对话不存在'
         message_rows = list(await ai_message_dao.get_all(db, conversation_id))
         target_message_index = self._get_message_row_index(message_rows=message_rows, message_id=message_id)
 

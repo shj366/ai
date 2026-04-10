@@ -28,42 +28,42 @@ from pydantic_ai import (
     UserPromptPart,
     VideoUrl,
 )
-from pydantic_core import to_jsonable_python
 
-from backend.plugin.ai.schema.ag_ui import (
-    AIChatActivityMessageDetail,
-    AIChatAssistantFileActivityContentSchemaBase,
-    AIChatAssistantMessageDetail,
-    AIChatAudioInputContentSchemaBase,
-    AIChatBinaryInputContentSchemaBase,
-    AIChatDocumentInputContentSchemaBase,
-    AIChatImageInputContentSchemaBase,
-    AIChatInputContentMetadataSchemaBase,
-    AIChatMessagesSnapshotDetail,
-    AIChatReasoningMessageDetail,
-    AIChatRequestInstructionActivityContentSchemaBase,
-    AIChatSnapshotMessageDetail,
-    AIChatSystemMessageDetail,
-    AIChatToolMessageDetail,
-    AIChatUserMessageParam,
-    AIChatVendorMetadataSchemaBase,
-    AIChatVideoInputContentSchemaBase,
+from backend.plugin.ai.protocol.ag_ui.schema import (
+    AIChatAgUiActivityMessageDetail,
+    AIChatAgUiAssistantFileActivityContentSchemaBase,
+    AIChatAgUiAssistantMessageDetail,
+    AIChatAgUiAudioInputContentSchemaBase,
+    AIChatAgUiBinaryInputContentSchemaBase,
+    AIChatAgUiDocumentInputContentSchemaBase,
+    AIChatAgUiImageInputContentSchemaBase,
+    AIChatAgUiInputContentMetadataSchemaBase,
+    AIChatAgUiMessagesSnapshotDetail,
+    AIChatAgUiReasoningMessageDetail,
+    AIChatAgUiRequestInstructionActivityContentSchemaBase,
+    AIChatAgUiSnapshotMessageDetail,
+    AIChatAgUiSystemMessageDetail,
+    AIChatAgUiToolMessageDetail,
+    AIChatAgUiUserMessageParam,
+    AIChatAgUiVendorMetadataSchemaBase,
+    AIChatAgUiVideoInputContentSchemaBase,
 )
+from backend.plugin.ai.protocol.ag_ui.serializer import serialize_ag_ui_jsonable_python
 
 SnapshotMessage: TypeAlias = (
-    AIChatUserMessageParam
-    | AIChatAssistantMessageDetail
-    | AIChatSystemMessageDetail
-    | AIChatToolMessageDetail
-    | AIChatActivityMessageDetail
-    | AIChatReasoningMessageDetail
+    AIChatAgUiUserMessageParam
+    | AIChatAgUiAssistantMessageDetail
+    | AIChatAgUiSystemMessageDetail
+    | AIChatAgUiToolMessageDetail
+    | AIChatAgUiActivityMessageDetail
+    | AIChatAgUiReasoningMessageDetail
 )
 AttachmentInputContent: TypeAlias = (
-    AIChatImageInputContentSchemaBase
-    | AIChatAudioInputContentSchemaBase
-    | AIChatVideoInputContentSchemaBase
-    | AIChatDocumentInputContentSchemaBase
-    | AIChatBinaryInputContentSchemaBase
+    AIChatAgUiImageInputContentSchemaBase
+    | AIChatAgUiAudioInputContentSchemaBase
+    | AIChatAgUiVideoInputContentSchemaBase
+    | AIChatAgUiDocumentInputContentSchemaBase
+    | AIChatAgUiBinaryInputContentSchemaBase
 )
 SnapshotInputContent: TypeAlias = TextInputContent | AttachmentInputContent
 SnapshotMetaValue: TypeAlias = datetime | str | int | None
@@ -81,10 +81,10 @@ def serialize_tool_return_content(content: object) -> str:
     """
     if isinstance(content, str):
         return content
-    return json.dumps(to_jsonable_python(content), ensure_ascii=False)
+    return json.dumps(serialize_ag_ui_jsonable_python(content), ensure_ascii=False)
 
 
-def build_vendor_metadata_schema(vendor_metadata: dict[str, Any] | None) -> AIChatVendorMetadataSchemaBase | None:
+def build_vendor_metadata_schema(vendor_metadata: dict[str, Any] | None) -> AIChatAgUiVendorMetadataSchemaBase | None:
     """
     构建供应商元数据模型
 
@@ -96,7 +96,7 @@ def build_vendor_metadata_schema(vendor_metadata: dict[str, Any] | None) -> AICh
     filename = vendor_metadata.get('filename')
     if not isinstance(filename, str):
         return None
-    return AIChatVendorMetadataSchemaBase(filename=filename)
+    return AIChatAgUiVendorMetadataSchemaBase(filename=filename)
 
 
 def serialize_instruction_activity_text(
@@ -110,7 +110,7 @@ def serialize_instruction_activity_text(
     """
     if isinstance(part.content, str):
         return part.content
-    return cast('list[dict[str, Any]]', to_jsonable_python(part.content))
+    return cast('list[dict[str, Any]]', serialize_ag_ui_jsonable_python(part.content))
 
 
 def build_input_content(
@@ -125,7 +125,7 @@ def build_input_content(
     if isinstance(attachment, UploadedFile):
         vendor_metadata = build_vendor_metadata_schema(attachment.vendor_metadata)
         filename = vendor_metadata.filename if vendor_metadata else None
-        return AIChatBinaryInputContentSchemaBase(
+        return AIChatAgUiBinaryInputContentSchemaBase(
             id=attachment.file_id,
             mime_type=attachment.media_type,
             filename=filename if isinstance(filename, str) else None,
@@ -135,7 +135,7 @@ def build_input_content(
         )
 
     vendor_metadata = build_vendor_metadata_schema(attachment.vendor_metadata)
-    metadata = AIChatInputContentMetadataSchemaBase(
+    metadata = AIChatAgUiInputContentMetadataSchemaBase(
         id=attachment.identifier,
         vendor_metadata=vendor_metadata,
         filename=vendor_metadata.filename if vendor_metadata else None,
@@ -150,12 +150,12 @@ def build_input_content(
         source = InputContentUrlSource(value=attachment.url, mime_type=attachment.media_type)
 
     if isinstance(attachment, (ImageUrl,)) or (isinstance(attachment, BinaryContent) and attachment.is_image):
-        return AIChatImageInputContentSchemaBase(source=source, metadata=metadata)
+        return AIChatAgUiImageInputContentSchemaBase(source=source, metadata=metadata)
     if isinstance(attachment, (AudioUrl,)) or (isinstance(attachment, BinaryContent) and attachment.is_audio):
-        return AIChatAudioInputContentSchemaBase(source=source, metadata=metadata)
+        return AIChatAgUiAudioInputContentSchemaBase(source=source, metadata=metadata)
     if isinstance(attachment, (VideoUrl,)) or (isinstance(attachment, BinaryContent) and attachment.is_video):
-        return AIChatVideoInputContentSchemaBase(source=source, metadata=metadata)
-    return AIChatDocumentInputContentSchemaBase(source=source, metadata=metadata)
+        return AIChatAgUiVideoInputContentSchemaBase(source=source, metadata=metadata)
+    return AIChatAgUiDocumentInputContentSchemaBase(source=source, metadata=metadata)
 
 
 def build_snapshot_message_id(*, message_id: int | None, message_index: int, suffix: str = '') -> str:
@@ -235,23 +235,23 @@ def serialize_request_message(
             if isinstance(first_part.content, str)
             else build_snapshot_input_content_list(content=first_part.content)
         )
-        return AIChatUserMessageParam(
+        return AIChatAgUiUserMessageParam(
             id=build_snapshot_message_id(message_id=message_id, message_index=message_index),
             content=content,
             **message_meta,
         )
     if isinstance(first_part, SystemPromptPart):
-        return AIChatSystemMessageDetail(
+        return AIChatAgUiSystemMessageDetail(
             id=build_snapshot_message_id(message_id=message_id, message_index=message_index),
             content=first_part.content,
             **message_meta,
         )
     if isinstance(first_part, (InstructionPart, RetryPromptPart)):
         part_created_time = getattr(first_part, 'timestamp', message.timestamp)
-        return AIChatActivityMessageDetail(
+        return AIChatAgUiActivityMessageDetail(
             id=build_snapshot_message_id(message_id=message_id, message_index=message_index),
             activity_type='request_instruction',
-            content=AIChatRequestInstructionActivityContentSchemaBase(
+            content=AIChatAgUiRequestInstructionActivityContentSchemaBase(
                 text=serialize_instruction_activity_text(first_part),
                 conversation_id=conversation_id,
                 persisted_message_id=message_id,
@@ -301,7 +301,7 @@ def serialize_response_message(
     for part_index, part in enumerate(message.parts):
         if isinstance(part, ThinkingPart):
             response_snapshot_messages.append(
-                AIChatReasoningMessageDetail(
+                AIChatAgUiReasoningMessageDetail(
                     id=build_snapshot_message_id(
                         message_id=message_id,
                         message_index=message_index,
@@ -317,14 +317,14 @@ def serialize_response_message(
             continue
         if isinstance(part, FilePart):
             response_snapshot_messages.append(
-                AIChatActivityMessageDetail(
+                AIChatAgUiActivityMessageDetail(
                     id=build_snapshot_message_id(
                         message_id=message_id,
                         message_index=message_index,
                         suffix=f'_file_{part_index}',
                     ),
                     activity_type='assistant_file',
-                    content=AIChatAssistantFileActivityContentSchemaBase(
+                    content=AIChatAgUiAssistantFileActivityContentSchemaBase(
                         file=build_input_content(part.content),
                         conversation_id=conversation_id,
                         persisted_message_id=message_id,
@@ -354,7 +354,7 @@ def serialize_response_message(
         if isinstance(part, ToolReturnPart):
             content = serialize_tool_return_content(part.content)
             response_snapshot_messages.append(
-                AIChatToolMessageDetail(
+                AIChatAgUiToolMessageDetail(
                     id=build_snapshot_message_id(
                         message_id=message_id,
                         message_index=message_index,
@@ -369,7 +369,7 @@ def serialize_response_message(
     if assistant_text_parts or tool_calls or not response_snapshot_messages:
         response_snapshot_messages.insert(
             0,
-            AIChatAssistantMessageDetail(
+            AIChatAgUiAssistantMessageDetail(
                 id=build_snapshot_message_id(message_id=message_id, message_index=message_index),
                 content=''.join(assistant_text_parts) or None,
                 tool_calls=tool_calls or None,
@@ -386,7 +386,7 @@ def serialize_messages_to_snapshot(
     message_ids: Sequence[int | None] | None = None,
     provider_ids: Sequence[int | None] | None = None,
     model_ids: Sequence[str | None] | None = None,
-) -> AIChatMessagesSnapshotDetail:
+) -> AIChatAgUiMessagesSnapshotDetail:
     """
     序列化模型消息为快照
 
@@ -397,7 +397,7 @@ def serialize_messages_to_snapshot(
     :param model_ids: 模型 ID 列表
     :return:
     """
-    snapshot_messages: list[AIChatSnapshotMessageDetail] = []
+    snapshot_messages: list[AIChatAgUiSnapshotMessageDetail] = []
     for model_message_index, message in enumerate(messages):
         message_id = message_ids[model_message_index] if message_ids else None
         provider_id = provider_ids[model_message_index] if provider_ids else None
@@ -427,4 +427,4 @@ def serialize_messages_to_snapshot(
                 )
             )
 
-    return AIChatMessagesSnapshotDetail(messages=snapshot_messages)
+    return AIChatAgUiMessagesSnapshotDetail(messages=snapshot_messages)

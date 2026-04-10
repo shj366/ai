@@ -1,11 +1,8 @@
 from base64 import b64decode
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
-from ag_ui.core import (
-    InputContentDataSource,
-    TextInputContent,
-)
+from ag_ui.core import InputContentDataSource, TextInputContent
 from pydantic_ai import (
     AudioUrl,
     BinaryContent,
@@ -19,32 +16,29 @@ from pydantic_ai import (
 
 from backend.common.exception import errors
 from backend.database.db import uuid4_str
-from backend.plugin.ai.schema.ag_ui import (
-    AIChatAudioInputContentSchemaBase,
-    AIChatBinaryInputContentSchemaBase,
-    AIChatDocumentInputContentSchemaBase,
-    AIChatImageInputContentSchemaBase,
-    AIChatUserMessageParam,
-    AIChatVendorMetadataSchemaBase,
-    AIChatVideoInputContentSchemaBase,
+from backend.plugin.ai.protocol.ag_ui.schema import (
+    AIChatAgUiAudioInputContentSchemaBase,
+    AIChatAgUiBinaryInputContentSchemaBase,
+    AIChatAgUiDocumentInputContentSchemaBase,
+    AIChatAgUiImageInputContentSchemaBase,
+    AIChatAgUiUserMessageParam,
+    AIChatAgUiVendorMetadataSchemaBase,
+    AIChatAgUiVideoInputContentSchemaBase,
 )
-
-if TYPE_CHECKING:
-    from pydantic_ai.messages import UploadedFileProviderName
 
 PromptContentItem: TypeAlias = str | AudioUrl | BinaryContent | DocumentUrl | ImageUrl | UploadedFile | VideoUrl
 UserPromptContent: TypeAlias = str | Sequence[PromptContentItem]
 MediaInputPart: TypeAlias = (
-    AIChatImageInputContentSchemaBase
-    | AIChatAudioInputContentSchemaBase
-    | AIChatVideoInputContentSchemaBase
-    | AIChatDocumentInputContentSchemaBase
+    AIChatAgUiImageInputContentSchemaBase
+    | AIChatAgUiAudioInputContentSchemaBase
+    | AIChatAgUiVideoInputContentSchemaBase
+    | AIChatAgUiDocumentInputContentSchemaBase
 )
 
 
 def build_vendor_metadata_dict(
     *,
-    vendor_metadata: AIChatVendorMetadataSchemaBase | None,
+    vendor_metadata: AIChatAgUiVendorMetadataSchemaBase | None,
     filename: str | None = None,
 ) -> dict[str, Any] | None:
     """
@@ -115,7 +109,7 @@ def build_file_url_content(
     )
 
 
-def deserialize_binary_input_part(part: AIChatBinaryInputContentSchemaBase) -> PromptContentItem:
+def deserialize_binary_input_part(part: AIChatAgUiBinaryInputContentSchemaBase) -> PromptContentItem:
     """
     解析二进制输入片段
 
@@ -126,7 +120,7 @@ def deserialize_binary_input_part(part: AIChatBinaryInputContentSchemaBase) -> P
     if part.id and part.provider_name:
         return UploadedFile(
             file_id=part.id,
-            provider_name=cast('UploadedFileProviderName', part.provider_name),
+            provider_name=part.provider_name,
             media_type=part.mime_type,
             identifier=part.identifier,
             vendor_metadata=vendor_metadata,
@@ -168,10 +162,10 @@ def deserialize_media_input_part(part: MediaInputPart) -> PromptContentItem:
     mime_type = (
         part.source.mime_type
         or {
-            AIChatImageInputContentSchemaBase: 'image/*',
-            AIChatAudioInputContentSchemaBase: 'audio/*',
-            AIChatVideoInputContentSchemaBase: 'video/*',
-            AIChatDocumentInputContentSchemaBase: 'application/octet-stream',
+            AIChatAgUiImageInputContentSchemaBase: 'image/*',
+            AIChatAgUiAudioInputContentSchemaBase: 'audio/*',
+            AIChatAgUiVideoInputContentSchemaBase: 'video/*',
+            AIChatAgUiDocumentInputContentSchemaBase: 'application/octet-stream',
         }[type(part)]
     )
     attachment_id = metadata.id if metadata and metadata.id else uuid4_str()
@@ -204,7 +198,7 @@ def deserialize_media_input_part(part: MediaInputPart) -> PromptContentItem:
     )
 
 
-def deserialize_current_user_message(message: AIChatUserMessageParam) -> ModelRequest:
+def deserialize_current_user_message(message: AIChatAgUiUserMessageParam) -> ModelRequest:
     """
     解析当前轮用户消息，保留文件标识和文件名
 
@@ -220,16 +214,16 @@ def deserialize_current_user_message(message: AIChatUserMessageParam) -> ModelRe
         if isinstance(part, TextInputContent):
             user_prompt_content.append(part.text)
             continue
-        if isinstance(part, AIChatBinaryInputContentSchemaBase):
+        if isinstance(part, AIChatAgUiBinaryInputContentSchemaBase):
             user_prompt_content.append(deserialize_binary_input_part(part))
             continue
         if isinstance(
             part,
             (
-                AIChatImageInputContentSchemaBase,
-                AIChatAudioInputContentSchemaBase,
-                AIChatVideoInputContentSchemaBase,
-                AIChatDocumentInputContentSchemaBase,
+                AIChatAgUiImageInputContentSchemaBase,
+                AIChatAgUiAudioInputContentSchemaBase,
+                AIChatAgUiVideoInputContentSchemaBase,
+                AIChatAgUiDocumentInputContentSchemaBase,
             ),
         ):
             user_prompt_content.append(deserialize_media_input_part(part))
