@@ -3,18 +3,17 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic_ai.capabilities import AbstractCapability, PrefixTools, Toolset
 from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio, MCPServerStreamableHTTP
-from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.plugin.ai.crud.crud_mcp import mcp_dao
+from backend.plugin.ai.dataclasses import ChatAgentDeps
 from backend.plugin.ai.enums import McpType
 from backend.plugin.ai.model import Mcp
 from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
-
-McpToolset = AbstractToolset[Any]
 
 
 class McpService:
@@ -45,16 +44,16 @@ class McpService:
         return await mcp_dao.get_all(db)
 
     @staticmethod
-    async def get_toolsets(*, db: AsyncSession, mcp_ids: list[int]) -> list[McpToolset]:
+    async def get_capabilities(*, db: AsyncSession, mcp_ids: list[int]) -> list[AbstractCapability[ChatAgentDeps]]:
         """
-        获取 MCP 工具集
+        获取 MCP 能力
 
         :param db: 数据库会话
         :param mcp_ids: MCP ID 列表
         :return:
         """
         mcps = await mcp_dao.get_by_ids(db, mcp_ids)
-        toolsets: list[McpToolset] = []
+        capabilities: list[AbstractCapability[ChatAgentDeps]] = []
         for mcp in mcps:
             headers = json.loads(mcp.headers) if isinstance(mcp.headers, str) else (mcp.headers or {})
             if not isinstance(headers, dict):
@@ -91,9 +90,8 @@ class McpService:
                     timeout=mcp.timeout,
                     read_timeout=mcp.read_timeout,
                 )
-            # 此举是为了为避免 MCP 工具名称冲突
-            toolsets.append(PrefixedToolset(toolset, prefix=f'mcp_{mcp.id}'))
-        return toolsets
+            capabilities.append(PrefixTools(Toolset(toolset), prefix=f'mcp_{mcp.id}'))
+        return capabilities
 
     @staticmethod
     async def get_list(*, db: AsyncSession, name: str | None, type: int | None) -> dict[str, Any]:

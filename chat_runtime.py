@@ -4,7 +4,7 @@ from typing import Any, TypeAlias
 from ag_ui.core import RunAgentInput, RunErrorEvent
 from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.builtin_tools import AbstractBuiltinTool, CodeExecutionTool, ImageGenerationTool
-from pydantic_ai.capabilities import AbstractCapability, BuiltinTool, Thinking, Toolset
+from pydantic_ai.capabilities import AbstractCapability, BuiltinTool, Thinking
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -94,9 +94,7 @@ async def build_agent_tools_capabilities(
     if 'thinking' in forwarded_props.model_fields_set and forwarded_props.thinking is not None:
         capabilities.append(Thinking(forwarded_props.thinking))
     if forwarded_props.mcp_ids:
-        capabilities.extend(
-            Toolset(toolset) for toolset in await mcp_service.get_toolsets(db=db, mcp_ids=forwarded_props.mcp_ids)
-        )
+        capabilities.extend(await mcp_service.get_capabilities(db=db, mcp_ids=forwarded_props.mcp_ids))
 
     tools, search_capabilities = build_chat_search_tools(
         web_search=forwarded_props.web_search,
