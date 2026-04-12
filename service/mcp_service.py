@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio, MCPServerStreamableHTTP
+from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -13,7 +14,7 @@ from backend.plugin.ai.enums import McpType
 from backend.plugin.ai.model import Mcp
 from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
 
-McpToolset = MCPServerStdio | MCPServerSSE | MCPServerStreamableHTTP
+McpToolset = AbstractToolset[Any]
 
 
 class McpService:
@@ -55,10 +56,10 @@ class McpService:
         mcps = await mcp_dao.get_by_ids(db, mcp_ids)
         toolsets: list[McpToolset] = []
         for mcp in mcps:
-            headers = json.loads(mcp.headers) if isinstance(mcp.headers, str) else mcp.headers
-            if headers is not None and not isinstance(headers, dict):
+            headers = json.loads(mcp.headers) if isinstance(mcp.headers, str) else (mcp.headers or {})
+            if not isinstance(headers, dict):
                 raise errors.RequestError(msg=f'MCP 请求头格式非法: {mcp.name}')
-            parsed_headers = None if headers is None else {str(key): str(value) for key, value in headers.items()}
+            parsed_headers = {str(key): str(value) for key, value in headers.items()}
             if mcp.type == McpType.stdio:
                 args = json.loads(mcp.args) if isinstance(mcp.args, str) else (mcp.args or [])
                 env = json.loads(mcp.env) if isinstance(mcp.env, str) else (mcp.env or {})
@@ -66,36 +67,32 @@ class McpService:
                     raise errors.RequestError(msg=f'MCP 命令参数格式非法: {mcp.name}')
                 if not isinstance(env, dict):
                     raise errors.RequestError(msg=f'MCP 环境变量格式非法: {mcp.name}')
-                toolsets.append(
-                    MCPServerStdio(
-                        command=mcp.command,
-                        args=[str(arg) for arg in args],
-                        env={str(key): str(value) for key, value in env.items()},
-                        timeout=mcp.timeout,
-                    )
+                toolset = MCPServerStdio(
+                    command=mcp.command,
+                    args=[str(arg) for arg in args],
+                    env={str(key): str(value) for key, value in env.items()},
+                    timeout=mcp.timeout,
                 )
             elif mcp.type == McpType.sse:
                 if not mcp.url:
                     raise errors.RequestError(msg=f'MCP 缺少 SSE URL: {mcp.name}')
-                toolsets.append(
-                    MCPServerSSE(
-                        url=mcp.url,
-                        headers=parsed_headers,
-                        timeout=mcp.timeout,
-                        read_timeout=mcp.read_timeout,
-                    )
+                toolset = MCPServerSSE(
+                    url=mcp.url,
+                    headers=parsed_headers,
+                    timeout=mcp.timeout,
+                    read_timeout=mcp.read_timeout,
                 )
             else:
                 if not mcp.url:
                     raise errors.RequestError(msg=f'MCP 缺少 Streamable HTTP URL: {mcp.name}')
-                toolsets.append(
-                    MCPServerStreamableHTTP(
-                        url=mcp.url,
-                        headers=parsed_headers,
-                        timeout=mcp.timeout,
-                        read_timeout=mcp.read_timeout,
-                    )
+                toolset = MCPServerStreamableHTTP(
+                    url=mcp.url,
+                    headers=parsed_headers,
+                    timeout=mcp.timeout,
+                    read_timeout=mcp.read_timeout,
                 )
+            # 此举是为了为避免 MCP 工具名称冲突
+            toolsets.append(PrefixedToolset(toolset, prefix=f'mcp_{mcp.id}'))
         return toolsets
 
     @staticmethod
