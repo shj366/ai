@@ -101,19 +101,12 @@ class CRUDAIModel(CRUDPlus[AIModel]):
         """
         批量创建模型
 
-        :param db:数据库会话
+        :param db: 数据库会话
         :param objs: 批量创建模型参数
         :return:
         """
-        now = timezone.now()
-        payloads = [
-            {
-                **obj,
-                'created_time': obj.get('created_time', now),
-            }
-            for obj in objs
-        ]
-        await self.bulk_create_models(db, payloads)
+        db.add_all([self.model(**obj) for obj in objs])
+        await db.flush()
 
     async def update(self, db: AsyncSession, pk: int, obj: UpdateAIModelParam) -> int:
         """

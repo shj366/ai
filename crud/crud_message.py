@@ -49,16 +49,8 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param objs: 消息列表
         :return:
         """
-        now = timezone.now()
-        payloads = [
-            {
-                **obj,
-                'created_time': obj.get('created_time', now),
-                'updated_time': obj.get('updated_time'),
-            }
-            for obj in objs
-        ]
-        await self.bulk_create_models(db, payloads)
+        db.add_all([self.model(**obj) for obj in objs])
+        await db.flush()
 
     async def update_message_indexes_offset(
         self,
