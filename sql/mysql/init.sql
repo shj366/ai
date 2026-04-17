@@ -35,3 +35,12 @@ values
 ('新增MCP', 'AddAIMcp', null, 0, null, 2, null, 'ai:mcp:add', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null),
 ('修改MCP', 'EditAIMcp', null, 0, null, 2, null, 'ai:mcp:edit', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null),
 ('删除MCP', 'DeleteAIMcp', null, 0, null, 2, null, 'ai:mcp:del', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null);
+
+-- ======================================================================
+-- 权限分配
+-- ======================================================================
+-- 为角色2（普通用户）分配部分交互权限
+INSERT INTO sys_role_menu (role_id, menu_id)
+SELECT 2, id FROM sys_menu WHERE name IN (
+    'PluginAI', 'AIChat'
+);
