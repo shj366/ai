@@ -1,5 +1,5 @@
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('AI', 'PluginAI', '/plugins/ai', 11, 'tabler:robot', 0, null, null, 1, 1, 1, '', null, null, now(), null);
+values ('AI管家', 'PluginAI', '/plugins/ai', 2000, 'tabler:robot', 0, null, null, 1, 1, 1, '', null, null, now(), null);
 
 set @ai_menu_id = LAST_INSERT_ID();
 
