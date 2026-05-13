@@ -44,3 +44,9 @@ INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT 2, id FROM sys_menu WHERE name IN (
     'PluginAI', 'AIChat'
 );
+
+insert into ai_provider (id, name, type, api_key, api_host, status, remark, created_time, updated_time)
+values  (1, 'deepseek', 0, 'sk-9fcacb712e6f4c709e6d0d09ddb4d34f', 'https://api.deepseek.com/v1', 1, null, '2026-05-12 17:32:00', null);
+
+insert into ai_model (id, provider_id, model_id, status, remark, created_time, updated_time)
+values  (1, 1, 'deepseek-chat', 1, null, '2026-05-12 17:32:41', null);

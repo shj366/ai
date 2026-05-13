@@ -153,13 +153,14 @@ class ChatService:
                     for index, message in enumerate(payload_messages)
                 ],
             )
-        state = await ai_conversation_service.get_chat_state(
-            db=db,
-            conversation_id=conversation_id,
-            user_id=user_id,
-            must_exist=True,
-            require_messages=True,
-        )
+            # 在同一会话内加载聊天状态，避免外层 db 因事务快照（如 MySQL REPEATABLE READ）读不到刚提交的数据
+            state = await ai_conversation_service.get_chat_state(
+                db=session,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                must_exist=True,
+                require_messages=True,
+            )
         message_history = state.model_messages[state.context_start_index :]
         persistence = ChatCompletionPersistence(
             conversation_id=conversation_id,
