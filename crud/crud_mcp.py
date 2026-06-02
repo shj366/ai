@@ -6,6 +6,7 @@ from sqlalchemy_crud_plus import CRUDPlus
 
 from backend.plugin.ai.model import Mcp
 from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
+from backend.utils.timezone import timezone
 
 
 class CRUDMcp(CRUDPlus[Mcp]):
@@ -19,7 +20,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param pk: MCP ID
         :return:
         """
-        return await self.select_model(db, pk)
+        return await self.select_model(db, pk, deleted=0)
 
     async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[Mcp]:
         """
@@ -29,7 +30,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param pks: MCP ID 列表
         :return:
         """
-        return await self.select_models(db, id__in=pks)
+        return await self.select_models(db, id__in=pks, deleted=0)
 
     async def get_by_name(self, db: AsyncSession, name: str) -> Mcp | None:
         """
@@ -39,7 +40,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param name: MCP 名称
         :return:
         """
-        return await self.select_model_by_column(db, name=name)
+        return await self.select_model_by_column(db, name=name, deleted=0)
 
     async def get_select(self, name: str | None, type: int | None) -> Select:
         """
@@ -49,7 +50,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param type: MCP 类型
         :return:
         """
-        filters = {}
+        filters = {'deleted': 0}
 
         if name is not None:
             filters.update(name__like=f'%{name}%')
@@ -65,7 +66,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param db: 数据库会话
         :return:
         """
-        return await self.select_models(db)
+        return await self.select_models(db, deleted=0)
 
     async def create(self, db: AsyncSession, obj: CreateMcpParam) -> None:
         """
@@ -86,7 +87,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param obj: 更新 MCP 参数
         :return:
         """
-        return await self.update_model(db, pk, obj)
+        return await self.update_model_by_column(db, obj, id=pk, deleted=0)
 
     async def delete(self, db: AsyncSession, pk: int) -> int:
         """
@@ -96,7 +97,16 @@ class CRUDMcp(CRUDPlus[Mcp]):
         :param pk: MCP ID
         :return:
         """
-        return await self.delete_model(db, pk)
+        return await self.delete_model_by_column(
+            db,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            id=pk,
+            deleted=0,
+        )
 
 
 mcp_dao: CRUDMcp = CRUDMcp(Mcp)

@@ -11,9 +11,13 @@ class AIConversation(Base):
     """AI 对话"""
 
     __tablename__ = 'ai_conversation'
+    __table_args__ = (
+        sa.UniqueConstraint('conversation_id', 'deleted', name='uk_ai_conversation_conversation_id_deleted'),
+        {'comment': 'AI 对话'},
+    )
 
     id: Mapped[id_key] = mapped_column(init=False)
-    conversation_id: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True, comment='对话 ID')
+    conversation_id: Mapped[str] = mapped_column(sa.String(64), index=True, comment='对话 ID')
     user_id: Mapped[int] = mapped_column(sa.BigInteger, index=True, comment='用户 ID')
     title: Mapped[str] = mapped_column(sa.String(256), comment='对话标题')
     provider_id: Mapped[int] = mapped_column(sa.BigInteger, comment='供应商 ID')

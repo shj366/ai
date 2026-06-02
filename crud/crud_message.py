@@ -20,7 +20,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param pk: ID
         :return:
         """
-        return await self.select_model(db, pk)
+        return await self.select_model(db, pk, deleted=0)
 
     async def get_all(self, db: AsyncSession, conversation_id: str) -> Sequence[AIMessage]:
         """
@@ -30,7 +30,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        return await self.select_models_order(db, 'message_index', 'asc', conversation_id=conversation_id)
+        return await self.select_models_order(db, 'message_index', 'asc', conversation_id=conversation_id, deleted=0)
 
     async def get_select(self, conversation_id: str) -> Select:
         """
@@ -39,7 +39,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        return await self.select_order('message_index', 'asc', conversation_id=conversation_id)
+        return await self.select_order('message_index', 'asc', conversation_id=conversation_id, deleted=0)
 
     async def bulk_create(self, db: AsyncSession, objs: list[dict[str, Any]]) -> None:
         """
@@ -82,6 +82,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
             'asc',
             conversation_id=conversation_id,
             message_index__ge=start_message_index,
+            deleted=0,
         )
 
         if not messages:
@@ -107,7 +108,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param obj: 更新内容
         :return:
         """
-        return await self.update_model(db, pk, obj)
+        return await self.update_model_by_column(db, obj, id=pk, deleted=0)
 
     async def delete_message(self, db: AsyncSession, pk: int) -> int:
         """
@@ -117,7 +118,16 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param pk: 消息 ID
         :return:
         """
-        return await self.delete_model(db, pk)
+        return await self.delete_model_by_column(
+            db,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            id=pk,
+            deleted=0,
+        )
 
     async def delete_message_index_range(
         self,
@@ -138,9 +148,15 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         return await self.delete_model_by_column(
             db,
             allow_multiple=True,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
             conversation_id=conversation_id,
             message_index__ge=start_message_index,
             message_index__le=end_message_index,
+            deleted=0,
         )
 
     async def delete(self, db: AsyncSession, conversation_id: str) -> int:
@@ -151,7 +167,17 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        return await self.delete_model_by_column(db, allow_multiple=True, conversation_id=conversation_id)
+        return await self.delete_model_by_column(
+            db,
+            allow_multiple=True,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            conversation_id=conversation_id,
+            deleted=0,
+        )
 
 
 ai_message_dao: CRUDAIMessage = CRUDAIMessage(AIMessage)

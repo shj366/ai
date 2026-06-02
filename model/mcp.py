@@ -11,9 +11,13 @@ class Mcp(Base):
     """MCP 表"""
 
     __tablename__ = 'ai_mcp'
+    __table_args__ = (
+        sa.UniqueConstraint('name', 'deleted', name='uk_ai_mcp_name_deleted'),
+        {'comment': 'MCP 表'},
+    )
 
     id: Mapped[id_key] = mapped_column(init=False)
-    name: Mapped[str] = mapped_column(sa.String(64), unique=True, comment='MCP 名称')
+    name: Mapped[str] = mapped_column(sa.String(64), comment='MCP 名称')
     command: Mapped[str] = mapped_column(sa.String(256), comment='MCP 命令')
     type: Mapped[int] = mapped_column(default=0, comment='MCP 类型（0stdio 1sse 2streamable_http）')
     description: Mapped[str | None] = mapped_column(UniversalText, default=None, comment='MCP 描述')
