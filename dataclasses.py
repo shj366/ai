@@ -3,7 +3,6 @@ from typing import Any
 
 from pydantic_ai import ModelRequest, ModelResponse
 from pydantic_ai.capabilities import AbstractCapability
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.ai.model.conversation import AIConversation
 from backend.plugin.ai.model.message import AIMessage
@@ -14,7 +13,6 @@ from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 class ChatAgentDeps:
     """聊天代理依赖"""
 
-    db: AsyncSession
     user_id: int
 
 

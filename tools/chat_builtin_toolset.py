@@ -2,6 +2,7 @@ from pydantic_ai.capabilities import AbstractCapability, Toolset
 from pydantic_ai.tools import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from backend.database.db import async_db_session
 from backend.plugin.ai.dataclasses import ChatAgentDeps
 
 
@@ -34,7 +35,8 @@ def build_chat_builtin_capability() -> AbstractCapability[ChatAgentDeps]:
         """
         from backend.plugin.ai.service.quick_phrase_service import ai_quick_phrase_service
 
-        phrases = await ai_quick_phrase_service.get_all(db=ctx.deps.db, user_id=ctx.deps.user_id)
+        async with async_db_session() as db:
+            phrases = await ai_quick_phrase_service.get_all(db=db, user_id=ctx.deps.user_id)
         return [{'id': item.id, 'title': item.title, 'content': item.content} for item in phrases]
 
     return Toolset(toolset)

@@ -10,6 +10,7 @@ from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
 from backend.common.log import log
+from backend.database.db import async_db_session
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.crud.crud_model import ai_model_dao
@@ -371,7 +372,6 @@ async def persist_completion_messages(
 
 def stream_response(
     *,
-    db: AsyncSession,
     user_id: int,
     agent: ChatAgent,
     run_context: ChatRunContext,
@@ -384,7 +384,6 @@ def stream_response(
     """
     流式响应
 
-    :param db: 数据库会话
     :param user_id: 用户 ID
     :param agent: 聊天代理
     :param run_context: 运行上下文
@@ -400,20 +399,21 @@ def stream_response(
         raw_error_message = ' '.join(message.split()) if message else ''
         try:
             error_message = raw_error_message or '模型请求失败，请稍后重试'
-            await persist_completion_messages(
-                db=db,
-                persistence=persistence,
-                messages=[
-                    ModelResponse(
-                        parts=[TextPart(content=f'模型请求失败：{error_message}')],
-                        model_name=persistence.forwarded_props.model_id,
-                        metadata={
-                            'is_error': True,
-                            'error_message': error_message,
-                        },
-                    )
-                ],
-            )
+            async with async_db_session.begin() as db:
+                await persist_completion_messages(
+                    db=db,
+                    persistence=persistence,
+                    messages=[
+                        ModelResponse(
+                            parts=[TextPart(content=f'模型请求失败：{error_message}')],
+                            model_name=persistence.forwarded_props.model_id,
+                            metadata={
+                                'is_error': True,
+                                'error_message': error_message,
+                            },
+                        )
+                    ],
+                )
         except Exception as e:
             log.exception(f'持久化聊天失败消息异常: {e}')
         else:
@@ -429,7 +429,6 @@ def stream_response(
             log.warning(f'关闭模型供应商客户端失败: {e}')
 
     return protocol_adapter.build_streaming_response(
-        db=db,
         user_id=user_id,
         agent=agent,
         run_context=run_context,

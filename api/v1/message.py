@@ -20,13 +20,11 @@ router = APIRouter()
 )
 async def regenerate_conversation_message(
     request: Request,
-    db: CurrentSessionTransaction,
     conversation_id: Annotated[str, Path(description='对话 ID')],
     pk: Annotated[int, Path(gt=0, description='消息 ID')],
     obj: AIChatRegenerateParam,
 ) -> StreamingResponse:
     return await ai_message_service.regenerate_from_user_message(
-        db=db,
         user_id=request.user.id,
         conversation_id=conversation_id,
         pk=pk,
@@ -42,13 +40,11 @@ async def regenerate_conversation_message(
 )
 async def regenerate_conversation_response(
     request: Request,
-    db: CurrentSessionTransaction,
     conversation_id: Annotated[str, Path(description='对话 ID')],
     pk: Annotated[int, Path(gt=0, description='消息 ID')],
     obj: AIChatRegenerateParam,
 ) -> StreamingResponse:
     return await ai_message_service.regenerate_from_response_message(
-        db=db,
         user_id=request.user.id,
         conversation_id=conversation_id,
         pk=pk,

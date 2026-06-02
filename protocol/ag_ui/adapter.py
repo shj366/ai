@@ -3,7 +3,6 @@ from typing import Any, cast
 
 from ag_ui.core import RunAgentInput
 from pydantic_ai import AgentRunResult, ModelMessage
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
@@ -71,7 +70,6 @@ class AgUiChatProtocolAdapter:
     @staticmethod
     def build_streaming_response(
         *,
-        db: AsyncSession,
         user_id: int,
         agent: ChatAgent,
         run_context: ChatRunContext,
@@ -84,7 +82,6 @@ class AgUiChatProtocolAdapter:
         """
         运行聊天代理并返回 AG-UI 流式响应
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param agent: 聊天代理
         :param run_context: 协议运行上下文
@@ -96,7 +93,6 @@ class AgUiChatProtocolAdapter:
         :return:
         """
         return build_streaming_response(
-            db=db,
             user_id=user_id,
             agent=agent,
             run_input=cast('RunAgentInput', run_context.protocol_context),

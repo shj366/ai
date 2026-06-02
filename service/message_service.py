@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
+from backend.database.db import async_db_session
 from backend.plugin.ai.chat_runtime import (
     build_chat_agent,
     is_user_prompt_message,
@@ -66,7 +67,6 @@ class AIMessageService:
     @staticmethod
     async def _prepare_regenerate_context(
         *,
-        db: AsyncSession,
         user_id: int,
         conversation_id: str,
         obj: AIChatRegenerateParam,
@@ -74,7 +74,6 @@ class AIMessageService:
         """
         预加载重生成所需上下文
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param conversation_id: 对话 ID
         :param obj: 请求体
@@ -89,20 +88,20 @@ class AIMessageService:
             expected_conversation_id=conversation_id,
         )
         forwarded_props = run_context.forwarded_props
-        agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
-        state = await ai_conversation_service.get_chat_state(
-            db=db,
-            conversation_id=conversation_id,
-            user_id=user_id,
-            must_exist=True,
-            require_messages=True,
-        )
+        async with async_db_session() as db:
+            agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
+            state = await ai_conversation_service.get_chat_state(
+                db=db,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                must_exist=True,
+                require_messages=True,
+            )
         return run_context, forwarded_props, agent, state, protocol_adapter
 
     async def regenerate_from_user_message(
         self,
         *,
-        db: AsyncSession,
         user_id: int,
         conversation_id: str,
         pk: int,
@@ -112,7 +111,6 @@ class AIMessageService:
         """
         根据用户消息重生成 AI 回复
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param conversation_id: 对话 ID
         :param pk: 消息主键
@@ -121,7 +119,6 @@ class AIMessageService:
         :return:
         """
         run_context, forwarded_props, agent, state, protocol_adapter = await self._prepare_regenerate_context(
-            db=db,
             user_id=user_id,
             conversation_id=conversation_id,
             obj=obj,
@@ -175,14 +172,14 @@ class AIMessageService:
             )
 
         async def handle_complete(result: AgentRunResult[object]) -> None:
-            await persist_completion_messages(
-                db=db,
-                persistence=persistence,
-                messages=result.all_messages()[persistence.result_offset :],
-            )
+            async with async_db_session.begin() as db:
+                await persist_completion_messages(
+                    db=db,
+                    persistence=persistence,
+                    messages=result.all_messages()[persistence.result_offset :],
+                )
 
         return stream_response(
-            db=db,
             user_id=user_id,
             agent=agent,
             run_context=run_context,
@@ -196,7 +193,6 @@ class AIMessageService:
     async def regenerate_from_response_message(
         self,
         *,
-        db: AsyncSession,
         user_id: int,
         conversation_id: str,
         pk: int,
@@ -206,7 +202,6 @@ class AIMessageService:
         """
         根据 AI 回复重生成
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param conversation_id: 对话 ID
         :param pk: 消息主键
@@ -215,7 +210,6 @@ class AIMessageService:
         :return:
         """
         run_context, forwarded_props, agent, state, protocol_adapter = await self._prepare_regenerate_context(
-            db=db,
             user_id=user_id,
             conversation_id=conversation_id,
             obj=obj,
@@ -261,14 +255,14 @@ class AIMessageService:
         )
 
         async def handle_complete(result: AgentRunResult[object]) -> None:
-            await persist_completion_messages(
-                db=db,
-                persistence=persistence,
-                messages=result.all_messages()[persistence.result_offset :],
-            )
+            async with async_db_session.begin() as db:
+                await persist_completion_messages(
+                    db=db,
+                    persistence=persistence,
+                    messages=result.all_messages()[persistence.result_offset :],
+                )
 
         return stream_response(
-            db=db,
             user_id=user_id,
             agent=agent,
             run_context=run_context,

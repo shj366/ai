@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias
 
 from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelMessage, ModelRequest, ModelResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.plugin.ai.dataclasses import ChatAgentDeps
@@ -59,7 +58,6 @@ class ChatProtocolAdapter(Protocol):
     def build_streaming_response(
         self,
         *,
-        db: AsyncSession,
         user_id: int,
         agent: ChatAgent,
         run_context: ChatRunContext,
@@ -72,7 +70,6 @@ class ChatProtocolAdapter(Protocol):
         """
         运行聊天代理并构建协议流式响应
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param agent: 聊天代理
         :param run_context: 协议运行上下文

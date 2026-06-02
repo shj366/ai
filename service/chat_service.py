@@ -2,7 +2,6 @@ from typing import Any
 
 from pydantic_ai import AgentRunResult, ModelRequest, UserPromptPart
 from pydantic_core import to_jsonable_python
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
@@ -129,7 +128,6 @@ class ChatService:
     async def create_completion(
         self,
         *,
-        db: AsyncSession,
         user_id: int,
         obj: AIChatCompletionParam,
         accept: str | None,
@@ -137,7 +135,6 @@ class ChatService:
         """
         创建流式对话
 
-        :param db: 数据库会话
         :param user_id: 用户 ID
         :param obj: 请求体
         :param accept: Accept 请求头
@@ -163,7 +160,6 @@ class ChatService:
         )
         conversation_id = run_context.conversation_id
         forwarded_props = run_context.forwarded_props
-        agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
         prompt = self._extract_prompt(current_message=current_message)
         payload_messages = to_jsonable_python(current_messages, by_alias=True)
 
@@ -175,13 +171,15 @@ class ChatService:
             payload_messages=payload_messages,
         )
 
-        state = await ai_conversation_service.get_chat_state(
-            db=db,
-            conversation_id=conversation_id,
-            user_id=user_id,
-            must_exist=True,
-            require_messages=True,
-        )
+        async with async_db_session() as db:
+            agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
+            state = await ai_conversation_service.get_chat_state(
+                db=db,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                must_exist=True,
+                require_messages=True,
+            )
         message_history = state.model_messages[state.context_start_index :]
         persistence = ChatCompletionPersistence(
             conversation_id=conversation_id,
@@ -198,14 +196,14 @@ class ChatService:
         )
 
         async def handle_complete(result: AgentRunResult[Any]) -> None:
-            await persist_completion_messages(
-                db=db,
-                persistence=persistence,
-                messages=result.all_messages()[persistence.result_offset :],
-            )
+            async with async_db_session.begin() as db:
+                await persist_completion_messages(
+                    db=db,
+                    persistence=persistence,
+                    messages=result.all_messages()[persistence.result_offset :],
+                )
 
         return stream_response(
-            db=db,
             user_id=user_id,
             agent=agent,
             run_context=run_context,

@@ -4,7 +4,6 @@ from typing import Any, TypeAlias
 from ag_ui.core import BaseEvent, RunAgentInput, RunErrorEvent
 from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelResponse
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.plugin.ai.dataclasses import ChatAgentDeps
@@ -27,7 +26,6 @@ async def ag_ui_event_encoder(stream: AsyncIterator[BaseEvent]) -> AsyncIterator
 
 def build_streaming_response(
     *,
-    db: AsyncSession,
     user_id: int,
     agent: ChatAgent,
     run_input: RunAgentInput,
@@ -40,7 +38,6 @@ def build_streaming_response(
     """
     运行聊天代理并返回流式响应
 
-    :param db: 数据库会话
     :param user_id: 用户 ID
     :param agent: 聊天代理
     :param run_input: 运行参数
@@ -53,7 +50,7 @@ def build_streaming_response(
     """
     adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
     event_stream = adapter.run_stream(
-        deps=ChatAgentDeps(db=db, user_id=user_id),
+        deps=ChatAgentDeps(user_id=user_id),
         message_history=message_history,
         on_complete=on_complete,
     )
