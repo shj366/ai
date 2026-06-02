@@ -1,7 +1,7 @@
 from typing import Any
 
 from pydantic_ai.capabilities import AbstractCapability, Toolset
-from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio, MCPServerStreamableHTTP
+from pydantic_ai.mcp import MCPToolset, SSETransport, StdioTransport, StreamableHttpTransport
 
 from backend.common.exception import errors
 from backend.core.conf import settings
@@ -20,39 +20,34 @@ def build_mcp_capability(*, mcp: Mcp) -> AbstractCapability[Any]:
     tool_prefix = (mcp.tool_prefix or f'mcp_{mcp.id}').rstrip('_') or f'mcp_{mcp.id}'
 
     if mcp.type == McpType.stdio:
-        mcp_server = MCPServerStdio(
+        transport = StdioTransport(
             command=mcp.command,
             args=mcp.args or [],
             env={str(key): str(value) for key, value in (mcp.env or {}).items()},
-            tool_prefix=tool_prefix,
-            timeout=mcp.timeout,
-            read_timeout=mcp.read_timeout,
-            max_retries=settings.AI_MCP_MAX_RETRIES,
-            include_instructions=mcp.include_instructions,
         )
     elif mcp.type == McpType.sse:
         if not mcp.url:
             raise errors.RequestError(msg=f'MCP 缺少 SSE URL: {mcp.name}')
-        mcp_server = MCPServerSSE(
+        transport = SSETransport(
             url=mcp.url,
             headers=headers,
-            tool_prefix=tool_prefix,
-            timeout=mcp.timeout,
-            read_timeout=mcp.read_timeout,
-            max_retries=settings.AI_MCP_MAX_RETRIES,
-            include_instructions=mcp.include_instructions,
+            sse_read_timeout=mcp.read_timeout,
         )
     else:
         if not mcp.url:
             raise errors.RequestError(msg=f'MCP 缺少 Streamable HTTP URL: {mcp.name}')
-        mcp_server = MCPServerStreamableHTTP(
+        transport = StreamableHttpTransport(
             url=mcp.url,
             headers=headers,
-            tool_prefix=tool_prefix,
-            timeout=mcp.timeout,
-            read_timeout=mcp.read_timeout,
-            max_retries=settings.AI_MCP_MAX_RETRIES,
-            include_instructions=mcp.include_instructions,
+            sse_read_timeout=mcp.read_timeout,
         )
 
-    return Toolset(mcp_server)
+    toolset = MCPToolset(
+        transport,
+        id=f'mcp_{mcp.id}',
+        max_retries=settings.AI_MCP_MAX_RETRIES,
+        include_instructions=mcp.include_instructions,
+        init_timeout=mcp.timeout,
+        read_timeout=mcp.read_timeout,
+    )
+    return Toolset(toolset.prefixed(tool_prefix))

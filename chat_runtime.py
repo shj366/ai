@@ -1,9 +1,19 @@
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai.builtin_tools import AbstractBuiltinTool, CodeExecutionTool, WebFetchTool
-from pydantic_ai.capabilities import BuiltinTool, Thinking
+from pydantic_ai import (
+    Agent,
+    AgentRunResult,
+    BinaryImage,
+    CodeExecutionTool,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+    WebFetchTool,
+)
+from pydantic_ai.capabilities import NativeTool, Thinking
+from pydantic_ai.native_tools import AbstractNativeTool
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -81,7 +91,7 @@ async def build_chat_agent_parts(  # noqa: C901
     forwarded_props: AIChatForwardedPropsParam,
     provider_type: int,
     supports_tools: bool,
-    supported_builtin_tools: frozenset[type[AbstractBuiltinTool]],
+    supported_native_tools: frozenset[type[AbstractNativeTool]],
     supports_image_output: bool,
 ) -> ChatAgentParts:
     """
@@ -91,7 +101,7 @@ async def build_chat_agent_parts(  # noqa: C901
     :param forwarded_props: 聊天扩展参数
     :param provider_type: 供应商类型
     :param supports_tools: 模型是否支持 function tools
-    :param supported_builtin_tools: 模型支持的内置工具类型
+    :param supported_native_tools: 模型支持的原生工具类型
     :param supports_image_output: 模型是否支持图片输出
     :return:
     """
@@ -118,12 +128,12 @@ async def build_chat_agent_parts(  # noqa: C901
         and forwarded_props.generation_type == AIChatGenerationType.text
     )
     auto_web_fetch_enabled = (
-        auto_web_fetch and forwarded_props.web_search != AIWebSearchType.off and WebFetchTool in supported_builtin_tools
+        auto_web_fetch and forwarded_props.web_search != AIWebSearchType.off and WebFetchTool in supported_native_tools
     )
     parts.capabilities.extend(
         build_search_capabilities(
             web_search=forwarded_props.web_search,
-            supported_builtin_tools=supported_builtin_tools,
+            supported_native_tools=supported_native_tools,
             auto_web_fetch=auto_web_fetch,
         )
     )
@@ -139,9 +149,9 @@ async def build_chat_agent_parts(  # noqa: C901
     if (
         forwarded_props.enable_builtin_tools
         and forwarded_props.generation_type == AIChatGenerationType.text
-        and CodeExecutionTool in supported_builtin_tools
+        and CodeExecutionTool in supported_native_tools
     ):
-        parts.capabilities.append(BuiltinTool(CodeExecutionTool()))
+        parts.capabilities.append(NativeTool(CodeExecutionTool()))
         has_builtin_tools = True
 
     if forwarded_props.generation_type == AIChatGenerationType.image:
@@ -202,7 +212,7 @@ async def build_chat_agent(*, db: AsyncSession, forwarded_props: AIChatForwarded
             forwarded_props=forwarded_props,
             provider_type=provider.type,
             supports_tools=profile.supports_tools,
-            supported_builtin_tools=profile.supported_builtin_tools,
+            supported_native_tools=profile.supported_native_tools,
             supports_image_output=profile.supports_image_output,
         )
         return Agent(

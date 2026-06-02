@@ -1,7 +1,7 @@
 from typing import Any
 
-from pydantic_ai.builtin_tools import ImageGenerationTool
-from pydantic_ai.capabilities import AbstractCapability, BuiltinTool
+from pydantic_ai import ImageGenerationTool
+from pydantic_ai.capabilities import AbstractCapability, NativeTool
 
 from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
@@ -46,4 +46,4 @@ def build_image_generation_capability(
     )
     image_settings = forwarded_props.model_dump(include=image_fields, exclude_unset=True, exclude_none=True)
     image_tool_settings = {IMAGE_GENERATION_FIELD_MAP[field]: value for field, value in image_settings.items()}
-    return BuiltinTool(ImageGenerationTool(**image_tool_settings))
+    return NativeTool(ImageGenerationTool(**image_tool_settings))
