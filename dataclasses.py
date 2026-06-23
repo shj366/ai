@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from pydantic_ai import ModelRequest, ModelResponse
+from pydantic_ai.capabilities import AbstractCapability
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.plugin.ai.model.conversation import AIConversation
@@ -14,6 +16,13 @@ class ChatAgentDeps:
 
     db: AsyncSession
     user_id: int
+
+
+@dataclass(slots=True)
+class ChatAgentParts:
+    """聊天代理参数片段"""
+
+    capabilities: list[AbstractCapability[Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

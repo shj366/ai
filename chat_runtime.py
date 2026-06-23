@@ -1,38 +1,34 @@
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeAlias
+from typing import Any
 
-from ag_ui.core import RunAgentInput, RunErrorEvent
 from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai.builtin_tools import AbstractBuiltinTool, CodeExecutionTool, ImageGenerationTool
-from pydantic_ai.capabilities import AbstractCapability, BuiltinTool, Thinking
+from pydantic_ai.builtin_tools import AbstractBuiltinTool, CodeExecutionTool, WebFetchTool
+from pydantic_ai.capabilities import BuiltinTool, Thinking
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.exception import errors
 from backend.common.log import log
-from backend.database.db import uuid4_str
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
-from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatCompletionPersistence
-from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
+from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatAgentParts, ChatCompletionPersistence
+from backend.plugin.ai.enums import AIChatGenerationType, AIChatThinkingType, AIProviderType, AIWebSearchType
 from backend.plugin.ai.model import AIModel, AIProvider
-from backend.plugin.ai.protocol.ag_ui.event_stream import build_streaming_response
+from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter, ChatRunContext
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
-from backend.plugin.ai.schema.conversation import CreateAIConversationParam
+from backend.plugin.ai.schema.conversation import CreateAIConversationParam, UpdateAIConversationParam
 from backend.plugin.ai.service.mcp_service import mcp_service
-from backend.plugin.ai.tools.chat_builtin_tools import register_chat_builtin_tools
+from backend.plugin.ai.tools.chat_builtin_toolset import build_chat_builtin_capability
+from backend.plugin.ai.utils.capabilities.code_mode import build_code_mode_capability, should_enable_function_tools
+from backend.plugin.ai.utils.capabilities.image_generation import build_image_generation_capability
+from backend.plugin.ai.utils.capabilities.mcp import build_mcp_capability
+from backend.plugin.ai.utils.capabilities.search import build_search_capabilities
 from backend.plugin.ai.utils.chat_control import build_model_settings
-from backend.plugin.ai.utils.conversation_control import (
-    build_update_ai_conversation_param,
-    normalize_generated_conversation_title,
-)
-from backend.plugin.ai.utils.model_control import get_provider_model
-from backend.plugin.ai.utils.web_search import build_chat_search_tools
-
-ChatModelMessage: TypeAlias = ModelRequest | ModelResponse
+from backend.plugin.ai.utils.conversation_control import normalize_generated_conversation_title
+from backend.plugin.ai.utils.model_control import close_provider_model, get_provider_model
 
 
 def is_user_prompt_message(*, message: ChatModelMessage) -> bool:
@@ -73,78 +69,113 @@ async def get_available_provider_model(
         raise errors.NotFoundError(msg='供应商模型不存在')
     if not model.status:
         raise errors.RequestError(msg='此模型暂不可用，请更换模型或联系系统管理员')
+    if provider.type == AIProviderType.openrouter and '/' not in model.model_id:
+        raise errors.RequestError(msg='OpenRouter 模型 ID 必须包含供应商前缀，例如 openai/gpt-4o-mini')
     return provider, model
 
 
-async def build_agent_tools_capabilities(
+async def build_chat_agent_parts(  # noqa: C901
     *,
     db: AsyncSession,
     forwarded_props: AIChatForwardedPropsParam,
+    provider_type: int,
+    supports_tools: bool,
     supported_builtin_tools: frozenset[type[AbstractBuiltinTool]],
-) -> tuple[list[Any], list[AbstractCapability[ChatAgentDeps]]]:
+    supports_image_output: bool,
+) -> ChatAgentParts:
     """
-    构建代理工具和能力
+    构建聊天代理参数片段
 
     :param db: 数据库会话
     :param forwarded_props: 聊天扩展参数
+    :param provider_type: 供应商类型
+    :param supports_tools: 模型是否支持 function tools
     :param supported_builtin_tools: 模型支持的内置工具类型
+    :param supports_image_output: 模型是否支持图片输出
     :return:
     """
-    capabilities: list[AbstractCapability[ChatAgentDeps]] = []
-    if 'thinking' in forwarded_props.model_fields_set and forwarded_props.thinking is not None:
-        capabilities.append(Thinking(forwarded_props.thinking))
-    if forwarded_props.mcp_ids:
-        capabilities.extend(await mcp_service.get_capabilities(db=db, mcp_ids=forwarded_props.mcp_ids))
+    parts = ChatAgentParts()
+    has_builtin_tools = False
+    has_function_tool_sources = False
 
-    tools, search_capabilities = build_chat_search_tools(
-        web_search=forwarded_props.web_search,
-        supported_builtin_tools=supported_builtin_tools,
-        auto_web_fetch=forwarded_props.enable_builtin_tools
-        and forwarded_props.generation_type == AIChatGenerationType.text,
+    if forwarded_props.thinking is not None:
+        thinking_effort = (
+            forwarded_props.thinking.value
+            if isinstance(forwarded_props.thinking, AIChatThinkingType)
+            else forwarded_props.thinking
+        )
+        parts.capabilities.append(Thinking(thinking_effort))
+
+    if forwarded_props.mcp_ids:
+        mcps = await mcp_service.get_by_ids(db=db, mcp_ids=forwarded_props.mcp_ids)
+        parts.capabilities.extend(build_mcp_capability(mcp=mcp) for mcp in mcps)
+        has_function_tool_sources = True
+
+    auto_web_fetch = (
+        AIProviderType(provider_type) != AIProviderType.google
+        and forwarded_props.enable_builtin_tools
+        and forwarded_props.generation_type == AIChatGenerationType.text
     )
-    capabilities.extend(search_capabilities)
+    auto_web_fetch_enabled = (
+        auto_web_fetch and forwarded_props.web_search != AIWebSearchType.off and WebFetchTool in supported_builtin_tools
+    )
+    parts.capabilities.extend(
+        build_search_capabilities(
+            web_search=forwarded_props.web_search,
+            supported_builtin_tools=supported_builtin_tools,
+            auto_web_fetch=auto_web_fetch,
+        )
+    )
+    has_builtin_tools = (
+        has_builtin_tools or forwarded_props.web_search == AIWebSearchType.builtin or auto_web_fetch_enabled
+    )
+    has_function_tool_sources = has_function_tool_sources or forwarded_props.web_search in {
+        AIWebSearchType.exa,
+        AIWebSearchType.tavily,
+        AIWebSearchType.duckduckgo,
+    }
 
     if (
         forwarded_props.enable_builtin_tools
         and forwarded_props.generation_type == AIChatGenerationType.text
         and CodeExecutionTool in supported_builtin_tools
     ):
-        capabilities.append(BuiltinTool(CodeExecutionTool()))
-    return tools, capabilities
+        parts.capabilities.append(BuiltinTool(CodeExecutionTool()))
+        has_builtin_tools = True
 
+    if forwarded_props.generation_type == AIChatGenerationType.image:
+        if not supports_image_output:
+            raise errors.RequestError(msg='当前模型暂不支持图片生成，请更换模型')
+        parts.capabilities.append(
+            build_image_generation_capability(forwarded_props=forwarded_props, provider_type=provider_type)
+        )
+        has_builtin_tools = True
 
-def prepare_run_input(
-    *,
-    conversation_id: str | None,
-    forwarded_props: AIChatForwardedPropsParam,
-    default_conversation_id: str | None = None,
-    expected_conversation_id: str | None = None,
-) -> RunAgentInput:
-    """
-    解析并补全运行参数
+    function_tools_allowed = should_enable_function_tools(
+        provider_type=provider_type,
+        supports_tools=supports_tools,
+        has_builtin_tools=has_builtin_tools,
+    )
+    if forwarded_props.enable_builtin_tools and function_tools_allowed:
+        parts.capabilities.append(build_chat_builtin_capability())
+        has_function_tool_sources = True
 
-    :param conversation_id: 对话 ID
-    :param forwarded_props: 聊天扩展参数
-    :param default_conversation_id: 默认对话 ID
-    :param expected_conversation_id: 期望对话 ID
-    :return:
-    """
-    conversation_id = conversation_id or default_conversation_id or uuid4_str()
-    run_input = RunAgentInput.model_validate({
-        'thread_id': conversation_id,
-        'run_id': uuid4_str(),
-        'parent_run_id': None,
-        'state': {},
-        'messages': [],
-        'tools': [],
-        'context': [],
-        'forwarded_props': forwarded_props.model_dump(),
-    })
-
-    if expected_conversation_id is not None and run_input.thread_id != expected_conversation_id:
-        raise errors.RequestError(msg='请求体中的对话 ID 与路径不一致')
-
-    return run_input
+    if has_function_tool_sources and not function_tools_allowed:
+        if AIProviderType(provider_type) == AIProviderType.google and has_builtin_tools:
+            raise errors.RequestError(
+                msg='Google 模型不支持同时使用内置工具和函数工具，请关闭 MCP 和本地搜索/关闭内置工具'
+            )
+        raise errors.RequestError(msg='当前模型不支持函数工具，请关闭 MCP、本地搜索或项目内置工具')
+    if has_function_tool_sources:
+        code_mode_capability = build_code_mode_capability(
+            forwarded_props=forwarded_props,
+            provider_type=provider_type,
+            supports_tools=supports_tools,
+            has_builtin_tools=has_builtin_tools,
+        )
+        if code_mode_capability is not None:
+            parts.capabilities.append(code_mode_capability)
+    return parts
 
 
 async def build_chat_agent(*, db: AsyncSession, forwarded_props: AIChatForwardedPropsParam) -> Agent:
@@ -156,37 +187,63 @@ async def build_chat_agent(*, db: AsyncSession, forwarded_props: AIChatForwarded
     :return:
     """
     provider, model = await get_available_provider_model(db=db, forwarded_props=forwarded_props)
-
     model_instance = get_provider_model(
         provider_type=provider.type,
         model_name=model.model_id,
         api_key=provider.api_key,
         base_url=provider.api_host,
-        model_settings=build_model_settings(chat_metadata=forwarded_props, provider_type=provider.type),
     )
-    supported_builtin_tools = model_instance.profile.supported_builtin_tools
-    tools, capabilities = await build_agent_tools_capabilities(
-        db=db,
-        forwarded_props=forwarded_props,
-        supported_builtin_tools=supported_builtin_tools,
-    )
-    if forwarded_props.generation_type == AIChatGenerationType.image:
-        if not model_instance.profile.supports_image_output:
-            raise errors.RequestError(msg='当前模型暂不支持图片生成，请更换模型')
-        capabilities.append(BuiltinTool(ImageGenerationTool()))
+    try:
+        profile = model_instance.profile
+        model_settings = build_model_settings(chat_metadata=forwarded_props, provider_type=provider.type)
+        agent_parts = await build_chat_agent_parts(
+            db=db,
+            forwarded_props=forwarded_props,
+            provider_type=provider.type,
+            supports_tools=profile.supports_tools,
+            supported_builtin_tools=profile.supported_builtin_tools,
+            supports_image_output=profile.supports_image_output,
+        )
+        return Agent(
+            name='fba-chat',
+            deps_type=ChatAgentDeps,
+            model=model_instance,
+            model_settings=model_settings,
+            output_type=[BinaryImage, str] if forwarded_props.generation_type == AIChatGenerationType.image else str,
+            capabilities=agent_parts.capabilities,
+        )
+    except ValueError as e:
+        await close_provider_model(model_instance)
+        raise errors.RequestError(msg=f'模型配置无效: {e}') from e
+    except Exception:
+        await close_provider_model(model_instance)
+        raise
 
-    output_type: Any = [BinaryImage, str] if forwarded_props.generation_type == AIChatGenerationType.image else str
-    agent = Agent(
-        name='fba_chat',
-        deps_type=ChatAgentDeps,
-        model=model_instance,
-        output_type=output_type,
-        tools=tools,
-        capabilities=capabilities,
+
+def prepare_run_context(
+    *,
+    conversation_id: str | None,
+    forwarded_props: AIChatForwardedPropsParam,
+    protocol_adapter: ChatProtocolAdapter,
+    default_conversation_id: str | None = None,
+    expected_conversation_id: str | None = None,
+) -> ChatRunContext:
+    """
+    解析并补全运行参数
+
+    :param conversation_id: 对话 ID
+    :param forwarded_props: 聊天扩展参数
+    :param protocol_adapter: 协议适配器
+    :param default_conversation_id: 默认对话 ID
+    :param expected_conversation_id: 期望对话 ID
+    :return:
+    """
+    return protocol_adapter.build_run_context(
+        conversation_id=conversation_id,
+        forwarded_props=forwarded_props,
+        default_conversation_id=default_conversation_id,
+        expected_conversation_id=expected_conversation_id,
     )
-    if forwarded_props.enable_builtin_tools:
-        register_chat_builtin_tools(agent)
-    return agent
 
 
 async def persist_completion_messages(
@@ -208,21 +265,25 @@ async def persist_completion_messages(
 
     payload_messages = to_jsonable_python(messages, by_alias=True)
     assert isinstance(payload_messages, list)
-
-    insert_message_index = persistence.base_message_index
     current_conversation = persistence.conversation or await ai_conversation_dao.get_by_conversation_id(
         db, persistence.conversation_id
     )
+
+    # 持久化对话
     normalized_title = normalize_generated_conversation_title(title=persistence.title)
     if current_conversation:
         await ai_conversation_dao.update(
             db,
             current_conversation.id,
-            build_update_ai_conversation_param(
-                conversation=current_conversation,
+            UpdateAIConversationParam(
+                conversation_id=current_conversation.conversation_id,
                 title=normalized_title,
                 provider_id=persistence.forwarded_props.provider_id,
                 model_id=persistence.forwarded_props.model_id,
+                user_id=current_conversation.user_id,
+                pinned_time=current_conversation.pinned_time,
+                context_start_message_id=current_conversation.context_start_message_id,
+                context_cleared_time=current_conversation.context_cleared_time,
             ),
         )
     else:
@@ -237,6 +298,8 @@ async def persist_completion_messages(
             ),
         )
 
+    # 持久化消息
+    insert_message_index = persistence.base_message_index
     if (
         persistence.replace_message_row_ids is not None
         and persistence.replace_start_message_index is not None
@@ -306,45 +369,26 @@ async def persist_completion_messages(
     )
 
 
-async def persist_completion_result(
-    result: AgentRunResult[Any],
-    *,
-    db: AsyncSession,
-    persistence: ChatCompletionPersistence,
-) -> None:
-    """
-    持久化成功完成的聊天结果
-
-    :param result: 运行结果
-    :param db: 数据库会话
-    :param persistence: 持久化上下文
-    :return:
-    """
-    await persist_completion_messages(
-        db=db,
-        persistence=persistence,
-        messages=result.all_messages()[persistence.result_offset :],
-    )
-
-
 def stream_response(
     *,
     db: AsyncSession,
     user_id: int,
-    agent: Agent,
-    run_input: RunAgentInput,
+    agent: ChatAgent,
+    run_context: ChatRunContext,
+    protocol_adapter: ChatProtocolAdapter,
     accept: str | None,
     message_history: list[ChatModelMessage],
     on_complete: Callable[[AgentRunResult[Any]], Awaitable[None]],
     persistence: ChatCompletionPersistence,
 ) -> StreamingResponse:
     """
-    运行聊天代理并返回流式响应
+    流式响应
 
     :param db: 数据库会话
     :param user_id: 用户 ID
     :param agent: 聊天代理
-    :param run_input: 运行参数
+    :param run_context: 运行上下文
+    :param protocol_adapter: 协议适配器
     :param accept: Accept 请求头
     :param message_history: 消息历史
     :param on_complete: 完成回调
@@ -352,8 +396,8 @@ def stream_response(
     :return:
     """
 
-    async def handle_run_error(event: RunErrorEvent) -> None:
-        raw_error_message = event.message.strip() if event.message else ''
+    async def handle_run_error(message: str) -> None:
+        raw_error_message = ' '.join(message.split()) if message else ''
         try:
             error_message = raw_error_message or '模型请求失败，请稍后重试'
             await persist_completion_messages(
@@ -378,13 +422,20 @@ def stream_response(
             )
             log.warning(log_message)
 
-    return build_streaming_response(
+    async def handle_finish() -> None:
+        try:
+            await close_provider_model(agent.model)
+        except Exception as e:
+            log.warning(f'关闭模型供应商客户端失败: {e}')
+
+    return protocol_adapter.build_streaming_response(
         db=db,
         user_id=user_id,
         agent=agent,
-        run_input=run_input,
+        run_context=run_context,
         accept=accept,
         message_history=message_history,
         on_complete=on_complete,
         on_run_error=handle_run_error,
+        on_finish=handle_finish,
     )

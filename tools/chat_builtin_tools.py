@@ -1,3 +1,4 @@
+
 import json
 from datetime import datetime, date
 
@@ -37,7 +38,6 @@ def register_chat_builtin_tools(agent: Agent) -> None:
 
         models = await ai_model_dao.get_all(ctx.deps.db, provider_id=provider_id)
         return [item.model_id for item in models if item.status]
-
     @agent.tool
     async def get_database_schema(
         ctx: RunContext[ChatAgentDeps],
@@ -61,10 +61,10 @@ def register_chat_builtin_tools(agent: Agent) -> None:
         def run_inspect(connection):
             inspector = inspect(connection)
             all_tables = inspector.get_table_names()
-            
+
             if not table_names:
                 return json.dumps({"available_tables": all_tables}, ensure_ascii=False)
-            
+
             schema_info = {}
             for t in table_names:
                 if t in all_tables:
@@ -73,7 +73,7 @@ def register_chat_builtin_tools(agent: Agent) -> None:
                 else:
                     schema_info[t] = "Table not found."
             return json.dumps(schema_info, ensure_ascii=False)
-        
+
         try:
             result = await conn.run_sync(run_inspect)
             return result
@@ -104,12 +104,12 @@ def register_chat_builtin_tools(agent: Agent) -> None:
         sql_upper = sql.strip().upper()
         if not sql_upper.startswith("SELECT"):
             return json.dumps({"error": "Only SELECT queries are allowed for safety reasons."}, ensure_ascii=False)
-            
+
         try:
             # 执行原生SQL
             result = await ctx.deps.db.execute(text(sql))
             rows = result.mappings().all()
-            
+
             # 安全限制：如果结果超过2000行，则截断
             if len(rows) > 2000:
                 rows_to_return = rows[:2000]
@@ -117,7 +117,7 @@ def register_chat_builtin_tools(agent: Agent) -> None:
             else:
                 rows_to_return = rows
                 warning = None
-            
+
             def default_serializer(obj):
                 if isinstance(obj, (datetime, date)):
                     return obj.isoformat()
@@ -125,11 +125,11 @@ def register_chat_builtin_tools(agent: Agent) -> None:
 
             # 转换为字典列表
             data = [dict(row) for row in rows_to_return]
-            
+
             response = {"data": data}
             if warning:
                 response["warning"] = warning
-                
+
             return json.dumps(response, default=default_serializer, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"error": f"SQL Execution Error: {str(e)}"}, ensure_ascii=False)

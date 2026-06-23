@@ -9,16 +9,14 @@ from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import ChatConversationState
 from backend.plugin.ai.model.conversation import AIConversation
-from backend.plugin.ai.protocol.ag_ui.snapshot_builder import serialize_messages_to_snapshot
+from backend.plugin.ai.protocol.registry import get_chat_protocol_adapter
 from backend.plugin.ai.schema.conversation import (
     GetAIConversationDetail,
+    UpdateAIConversationParam,
     UpdateAIConversationPinnedParam,
     UpdateAIConversationTitleParam,
 )
-from backend.plugin.ai.utils.conversation_control import (
-    build_update_ai_conversation_param,
-    normalize_conversation_title,
-)
+from backend.plugin.ai.utils.conversation_control import normalize_conversation_title
 from backend.utils.timezone import timezone
 
 
@@ -123,7 +121,8 @@ class AIConversationService:
         model_messages = (
             ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
         )
-        messages_snapshot = serialize_messages_to_snapshot(
+        protocol_adapter = get_chat_protocol_adapter()
+        messages_snapshot = protocol_adapter.serialize_messages_to_snapshot(
             model_messages,
             conversation_id=conversation.conversation_id,
             message_ids=[row.id for row in message_rows],
@@ -245,8 +244,13 @@ class AIConversationService:
         return await ai_conversation_dao.update(
             db,
             conversation.id,
-            build_update_ai_conversation_param(
-                conversation=conversation,
+            UpdateAIConversationParam(
+                conversation_id=conversation.conversation_id,
+                title=conversation.title,
+                provider_id=conversation.provider_id,
+                model_id=conversation.model_id,
+                user_id=conversation.user_id,
+                pinned_time=conversation.pinned_time,
                 context_start_message_id=context_start_message_id,
                 context_cleared_time=context_cleared_time,
             ),

@@ -1,8 +1,6 @@
 from copy import deepcopy
-from functools import partial
 
-from ag_ui.core import RunAgentInput
-from pydantic_ai import Agent, ModelMessagesTypeAdapter, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai import Agent, AgentRunResult, ModelMessagesTypeAdapter, ModelRequest, ModelResponse, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -10,18 +8,20 @@ from backend.common.exception import errors
 from backend.plugin.ai.chat_runtime import (
     build_chat_agent,
     is_user_prompt_message,
-    persist_completion_result,
-    prepare_run_input,
+    persist_completion_messages,
+    prepare_run_context,
     stream_response,
 )
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import ChatCompletionPersistence, ChatConversationState
 from backend.plugin.ai.model import AIMessage
+from backend.plugin.ai.protocol.base import ChatProtocolAdapter, ChatRunContext
+from backend.plugin.ai.protocol.registry import get_chat_protocol_adapter
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam, AIChatRegenerateParam
+from backend.plugin.ai.schema.conversation import UpdateAIConversationParam
 from backend.plugin.ai.schema.message import UpdateAIMessageParam
 from backend.plugin.ai.service.conversation_service import ai_conversation_service
-from backend.plugin.ai.utils.conversation_control import build_update_ai_conversation_param
 
 
 class AIMessageService:
@@ -70,7 +70,7 @@ class AIMessageService:
         user_id: int,
         conversation_id: str,
         obj: AIChatRegenerateParam,
-    ) -> tuple[RunAgentInput, AIChatForwardedPropsParam, Agent, ChatConversationState]:
+    ) -> tuple[ChatRunContext, AIChatForwardedPropsParam, Agent, ChatConversationState, ChatProtocolAdapter]:
         """
         预加载重生成所需上下文
 
@@ -80,13 +80,15 @@ class AIMessageService:
         :param obj: 请求体
         :return:
         """
-        run_input = prepare_run_input(
+        protocol_adapter = get_chat_protocol_adapter()
+        run_context = prepare_run_context(
             conversation_id=obj.conversation_id,
             forwarded_props=obj.forwarded_props,
+            protocol_adapter=protocol_adapter,
             default_conversation_id=conversation_id,
             expected_conversation_id=conversation_id,
         )
-        forwarded_props = AIChatForwardedPropsParam.model_validate(run_input.forwarded_props or {})
+        forwarded_props = run_context.forwarded_props
         agent = await build_chat_agent(db=db, forwarded_props=forwarded_props)
         state = await ai_conversation_service.get_chat_state(
             db=db,
@@ -95,7 +97,7 @@ class AIMessageService:
             must_exist=True,
             require_messages=True,
         )
-        return run_input, forwarded_props, agent, state
+        return run_context, forwarded_props, agent, state, protocol_adapter
 
     async def regenerate_from_user_message(
         self,
@@ -118,7 +120,7 @@ class AIMessageService:
         :param accept: Accept 请求头
         :return:
         """
-        run_input, forwarded_props, agent, state = await self._prepare_regenerate_context(
+        run_context, forwarded_props, agent, state, protocol_adapter = await self._prepare_regenerate_context(
             db=db,
             user_id=user_id,
             conversation_id=conversation_id,
@@ -172,14 +174,22 @@ class AIMessageService:
                 result_offset=len(message_history),
             )
 
+        async def handle_complete(result: AgentRunResult[object]) -> None:
+            await persist_completion_messages(
+                db=db,
+                persistence=persistence,
+                messages=result.all_messages()[persistence.result_offset :],
+            )
+
         return stream_response(
             db=db,
             user_id=user_id,
             agent=agent,
-            run_input=run_input,
+            run_context=run_context,
+            protocol_adapter=protocol_adapter,
             accept=accept,
             message_history=message_history,
-            on_complete=partial(persist_completion_result, db=db, persistence=persistence),
+            on_complete=handle_complete,
             persistence=persistence,
         )
 
@@ -204,7 +214,7 @@ class AIMessageService:
         :param accept: Accept 请求头
         :return:
         """
-        run_input, forwarded_props, agent, state = await self._prepare_regenerate_context(
+        run_context, forwarded_props, agent, state, protocol_adapter = await self._prepare_regenerate_context(
             db=db,
             user_id=user_id,
             conversation_id=conversation_id,
@@ -250,14 +260,22 @@ class AIMessageService:
             result_offset=len(message_history),
         )
 
+        async def handle_complete(result: AgentRunResult[object]) -> None:
+            await persist_completion_messages(
+                db=db,
+                persistence=persistence,
+                messages=result.all_messages()[persistence.result_offset :],
+            )
+
         return stream_response(
             db=db,
             user_id=user_id,
             agent=agent,
-            run_input=run_input,
+            run_context=run_context,
+            protocol_adapter=protocol_adapter,
             accept=accept,
             message_history=message_history,
-            on_complete=partial(persist_completion_result, db=db, persistence=persistence),
+            on_complete=handle_complete,
             persistence=persistence,
         )
 
@@ -328,8 +346,13 @@ class AIMessageService:
         await ai_conversation_dao.update(
             db,
             conversation.id,
-            build_update_ai_conversation_param(
-                conversation=conversation,
+            UpdateAIConversationParam(
+                conversation_id=conversation.conversation_id,
+                title=conversation.title,
+                provider_id=conversation.provider_id,
+                model_id=conversation.model_id,
+                user_id=conversation.user_id,
+                pinned_time=conversation.pinned_time,
                 context_start_message_id=None,
                 context_cleared_time=None,
             ),
@@ -378,10 +401,13 @@ class AIMessageService:
         return await ai_conversation_dao.update(
             db,
             conversation.id,
-            build_update_ai_conversation_param(
-                conversation=conversation,
+            UpdateAIConversationParam(
+                conversation_id=conversation.conversation_id,
+                title=conversation.title,
                 provider_id=remaining_message_rows[-1].provider_id,
                 model_id=remaining_message_rows[-1].model_id,
+                user_id=conversation.user_id,
+                pinned_time=conversation.pinned_time,
                 context_start_message_id=context_start_message_id,
                 context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
             ),
