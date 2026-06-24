@@ -83,3 +83,5 @@ class RegenerationPersistence:
     response_id: int | None = None
     message_index: int | None = None
     insert_before_index: int | None = None
+    replace_start_index: int | None = None
+    replace_end_index: int | None = None
