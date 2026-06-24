@@ -14,14 +14,6 @@
 
 ## 配置说明
 
-在 `backend/.env` 中添加以下内容：
-
-```env
-# [ Plugin ] ai
-AI_EXA_API_KEY=''
-AI_TAVILY_API_KEY=''
-```
-
 插件目录下 `plugin.toml` 的 `[settings]` 中包含以下内容：
 
 ```toml
@@ -31,13 +23,13 @@ AI_HTTP_MAX_RETRIES = 5
 AI_MCP_MAX_RETRIES = 1
 ```
 
-在 `backend/core/conf.py` 中添加以下内容：
+当前项目的 `backend/core/conf.py` 已包含以下字段：
 
 ```python
 ##################################################
 # [ Plugin ] ai
 ##################################################
-# .env
+AI_CONFIG_STATUS: bool = True
 AI_EXA_API_KEY: str | None = None
 AI_TAVILY_API_KEY: str | None = None
 
@@ -49,15 +41,16 @@ AI_MCP_MAX_RETRIES: int
 
 ## 使用方式
 
-1. 安装并启用插件后，重启后端服务
-2. 先创建 AI 供应商，再同步或创建对应模型
-3. 配置默认助手模型
-4. 配置 MCP 和快捷短语等辅助能力，其中 OpenRouter 模型 ID 需使用 `供应商/模型` 格式
-5. 发起对话并维护会话历史
+1. 安装并启用参数配置插件和 AI 插件后，重启后端服务
+2. 通过 AI 配置管理菜单维护 `AI_EXA_API_KEY` 和 `AI_TAVILY_API_KEY`
+3. 先创建 AI 供应商，再同步或创建对应模型
+4. 配置默认助手模型
+5. 配置 MCP 和快捷短语等辅助能力，其中 OpenRouter 模型 ID 需使用 `供应商/模型` 格式
+6. 发起对话并维护会话历史
 
 ## 卸载说明
 
-- 卸载插件后，建议同步移除相关环境变量、插件基础配置和 `backend/core/conf.py` 中的插件配置
+- 卸载插件后，建议同步移除参数配置中的 AI 相关配置和 `backend/core/conf.py` 中的插件配置
 - 如前端页面或业务流程已依赖 AI 对话、默认模型、模型、供应商、MCP 等能力，请同步清理对应集成
 
 ## 联系方式

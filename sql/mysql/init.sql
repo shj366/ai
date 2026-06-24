@@ -27,6 +27,11 @@ values ('MCP 管理', 'AIMcpManage', '/plugins/ai/mcp', 5, 'simple-icons:modelco
 set @ai_mcp_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
+values ('配置管理', 'AIConfigManage', '/plugins/ai/config', 6, 'codicon:symbol-parameter', 1, '/plugins/config/views/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+
+set @ai_config_menu_id = LAST_INSERT_ID();
+
+insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
 values
 ('设置默认模型', 'EditAIDefaultModel', null, 0, null, 2, null, 'ai:default-model:edit', 1, 0, 1, '', null, @ai_default_model_menu_id, now(), null),
 ('新增供应商', 'AddAIProvider', null, 0, null, 2, null, 'ai:provider:add', 1, 0, 1, '', null, @ai_model_service_menu_id, now(), null),
@@ -40,4 +45,11 @@ values
 ('删除快捷短语', 'DeleteAIQuickPhrase', null, 0, null, 2, null, 'ai:quick-phrase:del', 1, 0, 1, '', null, @ai_quick_phrase_menu_id, now(), null),
 ('新增MCP', 'AddAIMcp', null, 0, null, 2, null, 'ai:mcp:add', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null),
 ('修改MCP', 'EditAIMcp', null, 0, null, 2, null, 'ai:mcp:edit', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null),
-('删除MCP', 'DeleteAIMcp', null, 0, null, 2, null, 'ai:mcp:del', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null);
+('删除MCP', 'DeleteAIMcp', null, 0, null, 2, null, 'ai:mcp:del', 1, 0, 1, '', null, @ai_mcp_menu_id, now(), null),
+('保存配置', 'EditAIConfig', null, 0, null, 2, null, 'sys.config.edits', 1, 0, 1, '', null, @ai_config_menu_id, now(), null);
+
+insert into sys_config (name, type, `key`, value, is_frontend, remark, created_time, updated_time)
+values
+('状态', 'AI', 'AI_CONFIG_STATUS', '1', false, null, now(), null),
+('Exa API Key', 'AI', 'AI_EXA_API_KEY', '', false, '用于 AI 联网搜索的 Exa API Key', now(), null),
+('Tavily API Key', 'AI', 'AI_TAVILY_API_KEY', '', false, '用于 AI 联网搜索的 Tavily API Key', now(), null);

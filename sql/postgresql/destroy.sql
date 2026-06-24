@@ -17,10 +17,19 @@ where name in (
     'AIMcpManage',
     'AddAIMcp',
     'EditAIMcp',
-    'DeleteAIMcp'
+    'DeleteAIMcp',
+    'AIConfigManage',
+    'EditAIConfig'
 );
 
 delete from sys_menu where name = 'PluginAI';
+
+delete from sys_config
+where "key" in (
+    'AI_CONFIG_STATUS',
+    'AI_EXA_API_KEY',
+    'AI_TAVILY_API_KEY'
+);
 
 drop table if exists ai_message;
 drop table if exists ai_conversation;

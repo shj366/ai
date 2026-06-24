@@ -5,6 +5,7 @@ description = "为系统提供 AI 赋能"
 author = "wu-clan"
 tags = ["agent", "ai", "mcp"]
 database = ["mysql", "postgresql"]
+depends_on = ["config"]
 
 [app]
 router = ["v1"]
