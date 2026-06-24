@@ -10,6 +10,7 @@ from backend.plugin.ai.capabilities.base import CapabilityBuilder
 from backend.plugin.ai.capabilities.builtin_toolset import build_builtin_toolset_capability
 from backend.plugin.ai.capabilities.code_execution import build_code_execution_capability
 from backend.plugin.ai.capabilities.code_mode import build_code_mode_capability
+from backend.plugin.ai.capabilities.extensions import build_extension_capabilities
 from backend.plugin.ai.capabilities.image import build_image_generation_capability
 from backend.plugin.ai.capabilities.mcp import build_mcp_capability
 from backend.plugin.ai.capabilities.search import build_search_capabilities
@@ -26,6 +27,7 @@ _CAPABILITY_BUILDERS: tuple[CapabilityBuilder, ...] = (
     build_code_execution_capability,
     build_image_generation_capability,
     build_builtin_toolset_capability,
+    build_extension_capabilities,
     build_code_mode_capability,
 )
 
