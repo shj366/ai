@@ -19,8 +19,8 @@ from backend.plugin.ai.utils.conversation_control import normalize_generated_con
 class ChatService:
     """聊天服务"""
 
+    @staticmethod
     async def create_completion(
-        self,
         *,
         user_id: int,
         obj: AIChatCompletionParam,
