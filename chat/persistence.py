@@ -97,39 +97,48 @@ async def persist_regeneration(
         return
     payload_messages = to_jsonable_python(messages, by_alias=True)
     assert isinstance(payload_messages, list)
-    response_payload = next(
-        (message for message in reversed(payload_messages) if message.get('kind') == 'response'),
-        None,
-    )
-    if response_payload is None:
+    if not any(message.get('kind') == 'response' for message in payload_messages):
         return
 
     # 锁定当前用户对话，保护短事务写入顺序
     conversation = await ai_conversation_dao.get_by_conversation_id_for_update(db, persistence.conversation_id)
     if not conversation or conversation.user_id != persistence.user_id:
         raise errors.NotFoundError(msg='对话不存在')
-    if persistence.response_id is not None:
-        await ai_message_dao.update(
-            db,
-            persistence.response_id,
-            {
-                'provider_id': persistence.forwarded_props.provider_id,
-                'model_id': persistence.forwarded_props.model_id,
-                'message': response_payload,
-            },
-        )
-        return
 
-    if persistence.insert_before_index is not None:
+    message_index = persistence.message_index
+    if persistence.replace_start_index is not None:
+        replace_end_index = (
+            persistence.replace_end_index
+            if persistence.replace_end_index is not None
+            else persistence.replace_start_index
+        )
+        await ai_message_dao.delete_message_index_range(
+            db,
+            persistence.conversation_id,
+            persistence.replace_start_index,
+            replace_end_index,
+        )
+        old_message_count = replace_end_index - persistence.replace_start_index + 1
+        message_index_offset = len(payload_messages) - old_message_count
+        if message_index_offset:
+            await ai_message_dao.update_message_indexes_offset(
+                db,
+                persistence.conversation_id,
+                replace_end_index + 1,
+                message_index_offset,
+            )
+        message_index = persistence.replace_start_index
+    elif persistence.insert_before_index is not None:
         await ai_message_dao.update_message_indexes_offset(
             db,
             persistence.conversation_id,
             persistence.insert_before_index,
-            1,
+            len(payload_messages),
         )
-    message_index = persistence.message_index
+        message_index = message_index or persistence.insert_before_index
     if message_index is None:
         message_index = await ai_message_dao.get_next_message_index(db, persistence.conversation_id)
+
     await ai_message_dao.bulk_create(
         db,
         [
@@ -137,9 +146,10 @@ async def persist_regeneration(
                 'conversation_id': persistence.conversation_id,
                 'provider_id': persistence.forwarded_props.provider_id,
                 'model_id': persistence.forwarded_props.model_id,
-                'message_index': message_index,
-                'message': response_payload,
+                'message_index': message_index + offset,
+                'message': message,
             }
+            for offset, message in enumerate(payload_messages)
         ],
     )
 
