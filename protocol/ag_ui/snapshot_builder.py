@@ -13,7 +13,7 @@ from ag_ui.core import (
     ToolMessage,
     UserMessage,
 )
-from pydantic_ai import ModelMessage, ModelRequest, ModelResponse
+from pydantic_ai import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 
 from backend.plugin.ai.protocol.ag_ui.schema import (
@@ -48,6 +48,15 @@ class SnapshotMessageBuildConfig(NamedTuple):
     detail_model: type[Any]
     extra_fields_getter: Callable[[Any], dict[str, Any]]
     primary_without_suffix: bool = False
+
+
+class PersistedMessageContext(NamedTuple):
+    """持久化消息上下文"""
+
+    message: ModelMessage
+    message_id: int | None
+    provider_id: int | None
+    model_id: str | None
 
 
 _SNAPSHOT_MESSAGE_BUILD_CONFIGS: tuple[SnapshotMessageBuildConfig, ...] = (
@@ -248,6 +257,79 @@ def serialize_response_message(
     )
 
 
+def serialize_assistant_message_segment(
+    *,
+    contexts: Sequence[PersistedMessageContext],
+    conversation_id: str | None,
+    message_index: int,
+) -> list[SnapshotMessage]:
+    """
+    序列化助手回复段
+
+    :param contexts: 持久化消息上下文列表
+    :param conversation_id: 对话 ID
+    :param message_index: 展示消息索引
+    :return:
+    """
+    if not contexts:
+        return []
+
+    anchor = next(
+        (
+            context
+            for context in reversed(contexts)
+            if isinstance(context.message, ModelResponse)
+            and any(isinstance(part, TextPart) and bool(part.content) for part in context.message.parts)
+        ),
+        None,
+    )
+    if anchor is None:
+        anchor = next(
+            (context for context in reversed(contexts) if isinstance(context.message, ModelResponse)),
+            contexts[-1],
+        )
+
+    created_time = next(
+        (
+            context.message.parts[0].timestamp
+            if isinstance(context.message, ModelRequest)
+            else context.message.timestamp
+            for context in contexts
+            if isinstance(context.message, ModelResponse)
+            or (isinstance(context.message, ModelRequest) and context.message.parts)
+        ),
+        None,
+    )
+    anchor_message = anchor.message
+    message_type = (
+        'error'
+        if isinstance(anchor_message, ModelResponse) and (anchor_message.metadata or {}).get('is_error')
+        else 'normal'
+    )
+    model_id = anchor.model_id
+    if not model_id and isinstance(anchor_message, ModelResponse):
+        model_id = anchor_message.model_name
+
+    base_meta = {
+        'conversation_id': conversation_id,
+        'persisted_message_id': anchor.message_id,
+        'provider_id': anchor.provider_id,
+        'model_id': model_id,
+        'created_time': created_time,
+        'message_index': message_index,
+        'message_type': message_type,
+    }
+
+    encoded_messages = AGUIAdapter.dump_messages([context.message for context in contexts], preserve_file_data=True)
+    return _build_snapshot_messages_from_encoded_messages(
+        encoded_messages=encoded_messages,
+        base_meta=base_meta,
+        message_id=anchor.message_id,
+        message_index=message_index,
+        fallback_empty_assistant=True,
+    )
+
+
 def serialize_messages_to_snapshot(
     messages: Sequence[ModelMessage],
     *,
@@ -267,6 +349,8 @@ def serialize_messages_to_snapshot(
     :return:
     """
     snapshot_messages: list[AIChatAgUiSnapshotMessageDetail] = []
+    assistant_segment_contexts: list[PersistedMessageContext] = []
+    message_index = 0
     message_contexts = zip(
         messages,
         message_ids or [None] * len(messages),
@@ -275,29 +359,59 @@ def serialize_messages_to_snapshot(
         strict=False,
     )
     for message, message_id, provider_id, model_id in message_contexts:
-        message_index = len(snapshot_messages)
-        if isinstance(message, ModelRequest):
-            snapshot_messages.extend(
-                serialize_request_message(
-                    message=message,
+        context = PersistedMessageContext(
+            message=message,
+            message_id=message_id,
+            provider_id=provider_id,
+            model_id=model_id,
+        )
+        if isinstance(message, ModelRequest) and bool(message.parts) and isinstance(message.parts[0], UserPromptPart):
+            if assistant_segment_contexts:
+                segment_messages = serialize_assistant_message_segment(
+                    contexts=assistant_segment_contexts,
                     conversation_id=conversation_id,
-                    message_id=message_id,
-                    provider_id=provider_id,
-                    model_id=model_id,
                     message_index=message_index,
                 )
+                snapshot_messages.extend(segment_messages)
+                if segment_messages:
+                    message_index += 1
+                assistant_segment_contexts = []
+            user_messages = serialize_request_message(
+                message=message,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                message_index=message_index,
             )
+            snapshot_messages.extend(user_messages)
+            if user_messages:
+                message_index += 1
             continue
         if isinstance(message, ModelResponse):
-            snapshot_messages.extend(
-                serialize_response_message(
-                    message=message,
-                    conversation_id=conversation_id,
-                    message_id=message_id,
-                    provider_id=provider_id,
-                    model_id=model_id,
-                    message_index=message_index,
-                )
+            assistant_segment_contexts.append(context)
+            continue
+        if isinstance(message, ModelRequest) and assistant_segment_contexts:
+            assistant_segment_contexts.append(context)
+            continue
+        if isinstance(message, ModelRequest):
+            request_messages = serialize_request_message(
+                message=message,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                message_index=message_index,
             )
+            snapshot_messages.extend(request_messages)
+            message_index += len(request_messages)
+
+    if assistant_segment_contexts:
+        segment_messages = serialize_assistant_message_segment(
+            contexts=assistant_segment_contexts,
+            conversation_id=conversation_id,
+            message_index=message_index,
+        )
+        snapshot_messages.extend(segment_messages)
 
     return AIChatAgUiMessagesSnapshotDetail(messages=snapshot_messages)
