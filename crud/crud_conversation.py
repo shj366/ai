@@ -54,7 +54,7 @@ class CRUDAIConversation(CRUDPlus[AIConversation]):
         :param user_id: 用户 ID
         :return:
         """
-        return await self.select_order('id', 'asc', user_id=user_id, deleted=0)
+        return await self.select_order('id', 'desc', user_id=user_id, deleted=0)
 
     async def create(self, db: AsyncSession, obj: CreateAIConversationParam) -> None:
         """
