@@ -303,7 +303,7 @@ class AIMessageService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         model_messages = (
             ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
         )
@@ -383,7 +383,7 @@ class AIMessageService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         target_message_index = self._get_message_row_index(message_rows=message_rows, pk=pk)
 
         remaining_message_rows = [row for row in message_rows if row.id != pk]

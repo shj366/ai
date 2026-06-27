@@ -67,8 +67,7 @@ class CRUDAIQuickPhrase(CRUDPlus[AIQuickPhrase]):
         :param user_id: 用户 ID
         :return:
         """
-        quick_phrase = self.model(**obj.model_dump(), user_id=user_id)
-        db.add(quick_phrase)
+        await self.create_model(db, obj, user_id=user_id)
 
     async def update(self, db: AsyncSession, pk: int, obj: UpdateAIQuickPhraseParam) -> int:
         """

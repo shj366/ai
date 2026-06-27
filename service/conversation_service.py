@@ -87,7 +87,7 @@ class AIConversationService:
                 model_messages=[],
                 context_start_index=0,
             )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         if require_messages and not message_rows:
             raise errors.RequestError(msg='对话消息不存在')
         context_start_index = 0
@@ -123,7 +123,7 @@ class AIConversationService:
             conversation_id=conversation_id,
             user_id=user_id,
         )
-        message_rows = await ai_message_dao.get_all(db, conversation.conversation_id)
+        message_rows = await ai_message_dao.get_all_by_message_index(db, conversation.conversation_id)
         model_messages = (
             ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
         )
@@ -247,7 +247,7 @@ class AIConversationService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         context_start_message_id = message_rows[-1].id if message_rows else None
         context_cleared_time = timezone.now() if message_rows else None
         return await ai_conversation_dao.update(
