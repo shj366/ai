@@ -174,7 +174,7 @@ class AIMessageService:
         row_model_message_ranges: list[tuple[int, int]] | None = None,
     ) -> tuple[int, int]:
         """
-        获取可安全删除的消息索引范围
+        获取可删除的单条消息索引范围
 
         :param message_rows: 消息行列表
         :param model_messages: 模型消息列表
@@ -182,14 +182,12 @@ class AIMessageService:
         :param row_model_message_ranges: 行到模型消息范围映射
         :return:
         """
-        if self._is_user_message_row(
+        if not self._is_user_message_row(
             message_rows=message_rows,
             model_messages=model_messages,
             row_index=target_index,
             row_model_message_ranges=row_model_message_ranges,
         ):
-            delete_start_index = target_index
-        else:
             target_row_messages = self._get_row_messages(
                 message_rows=message_rows,
                 model_messages=model_messages,
@@ -198,37 +196,8 @@ class AIMessageService:
             )
             if not any(isinstance(message, ModelResponse) for message in target_row_messages):
                 raise errors.RequestError(msg='仅支持删除用户消息或 AI 回复')
-            user_message_index = next(
-                (
-                    index
-                    for index in range(target_index - 1, -1, -1)
-                    if self._is_user_message_row(
-                        message_rows=message_rows,
-                        model_messages=model_messages,
-                        row_index=index,
-                        row_model_message_ranges=row_model_message_ranges,
-                    )
-                ),
-                None,
-            )
-            if user_message_index is None:
-                raise errors.RequestError(msg='未找到对应的用户消息')
-            delete_start_index = user_message_index + 1
-
-        delete_end_index = delete_start_index
-        for index in range(delete_start_index + 1, len(message_rows)):
-            if self._is_user_message_row(
-                message_rows=message_rows,
-                model_messages=model_messages,
-                row_index=index,
-                row_model_message_ranges=row_model_message_ranges,
-            ):
-                break
-            delete_end_index = index
-        return (
-            message_rows[delete_start_index].message_index,
-            message_rows[delete_end_index].message_index,
-        )
+        message_index = message_rows[target_index].message_index
+        return message_index, message_index
 
     @staticmethod
     async def _prepare_regenerate_context(
@@ -420,21 +389,20 @@ class AIMessageService:
                 model_messages=state.model_messages,
                 row_model_message_ranges=row_model_message_ranges,
             )
-            user_message_index = next(
-                (
-                    index
-                    for index in range(target_index - 1, -1, -1)
-                    if self._is_user_message_row(
-                        message_rows=state.message_rows,
-                        model_messages=state.model_messages,
-                        row_index=index,
-                        row_model_message_ranges=row_model_message_ranges,
-                    )
-                    and row_ranges[index][0] >= state.context_start_index
-                ),
-                None,
+            user_message_index = target_index - 1
+            target_row = state.message_rows[target_index]
+            has_adjacent_user_message = (
+                user_message_index >= 0
+                and state.message_rows[user_message_index].message_index == target_row.message_index - 1
+                and row_ranges[user_message_index][0] >= state.context_start_index
+                and self._is_user_message_row(
+                    message_rows=state.message_rows,
+                    model_messages=state.model_messages,
+                    row_index=user_message_index,
+                    row_model_message_ranges=row_model_message_ranges,
+                )
             )
-            if user_message_index is None:
+            if not has_adjacent_user_message:
                 raise errors.RequestError(msg='未找到对应的用户消息')
 
             _, user_message_end_index = row_ranges[user_message_index]
@@ -595,46 +563,35 @@ class AIMessageService:
         message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         target_message_index = self._get_message_row_index(message_rows=message_rows, pk=pk)
         model_messages, row_model_message_ranges = expand_message_rows(message_rows)
-        delete_start_index, delete_end_index = self._get_delete_message_index_range(
+        self._get_delete_message_index_range(
             message_rows=message_rows,
             model_messages=model_messages,
             target_index=target_message_index,
             row_model_message_ranges=row_model_message_ranges,
         )
+        target_row = message_rows[target_message_index]
 
-        deleted_row_ids = {
-            row.id for row in message_rows if delete_start_index <= row.message_index <= delete_end_index
-        }
-        remaining_message_rows = [row for row in message_rows if row.id not in deleted_row_ids]
-        if not remaining_message_rows:
-            await ai_message_dao.delete(db, conversation_id)
-            return await ai_conversation_dao.delete(db, conversation_id, user_id)
-
-        await ai_message_dao.delete_message_index_range(
-            db,
-            conversation_id,
-            delete_start_index,
-            delete_end_index,
-        )
+        count = await ai_message_dao.delete_message(db, pk)
 
         context_start_message_id = conversation.context_start_message_id
-        if context_start_message_id in deleted_row_ids:
-            previous_rows = [row for row in message_rows if row.message_index < delete_start_index]
+        if context_start_message_id == pk:
+            previous_rows = [row for row in message_rows if row.message_index < target_row.message_index]
             context_start_message_id = previous_rows[-1].id if previous_rows else None
-        return await ai_conversation_dao.update(
-            db,
-            conversation.id,
-            UpdateAIConversationParam(
-                conversation_id=conversation.conversation_id,
-                title=conversation.title,
-                provider_id=remaining_message_rows[-1].provider_id,
-                model_id=remaining_message_rows[-1].model_id,
-                user_id=conversation.user_id,
-                pinned_time=conversation.pinned_time,
-                context_start_message_id=context_start_message_id,
-                context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
-            ),
-        )
+            await ai_conversation_dao.update(
+                db,
+                conversation.id,
+                UpdateAIConversationParam(
+                    conversation_id=conversation.conversation_id,
+                    title=conversation.title,
+                    provider_id=conversation.provider_id,
+                    model_id=conversation.model_id,
+                    user_id=conversation.user_id,
+                    pinned_time=conversation.pinned_time,
+                    context_start_message_id=context_start_message_id,
+                    context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
+                ),
+            )
+        return count
 
 
 ai_message_service: AIMessageService = AIMessageService()
