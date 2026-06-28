@@ -1,4 +1,4 @@
-from pydantic_ai import ModelRequest, UserPromptPart
+from pydantic_ai import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_core import to_jsonable_python
 from starlette.responses import StreamingResponse
 
@@ -14,6 +14,39 @@ from backend.plugin.ai.schema.chat import AIChatCompletionParam
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam, UpdateAIConversationParam
 from backend.plugin.ai.service.conversation_service import ai_conversation_service
 from backend.plugin.ai.utils.conversation_control import normalize_generated_conversation_title
+from backend.plugin.ai.utils.message_storage import build_chat_message_record
+
+
+def _get_current_user_prompt_part(*, messages: list[ModelMessage]) -> UserPromptPart:
+    """
+    获取当前轮用户输入部分
+
+    :param messages: 模型消息列表
+    :return:
+    """
+    if len(messages) != 1:
+        raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
+    current_message = messages[-1]
+    if not isinstance(current_message, ModelRequest) or not is_user_prompt_message(message=current_message):
+        raise errors.RequestError(msg='最后一条消息必须是用户消息')
+    first_part = current_message.parts[0]
+    if not isinstance(first_part, UserPromptPart):
+        raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
+    return first_part
+
+
+def _parse_user_prompt(*, first_part: UserPromptPart) -> tuple[str, bool]:
+    """
+    解析用户输入文本和二进制输入状态
+
+    :param first_part: 用户输入部分
+    :return:
+    """
+    content_items = [first_part.content] if isinstance(first_part.content, str) else list(first_part.content)
+    prompt_parts = [item for item in content_items if isinstance(item, str)]
+    has_binary_input = len(prompt_parts) != len(content_items)
+    prompt = ' '.join(' '.join(part.split()) for part in prompt_parts if part.split())
+    return prompt, has_binary_input
 
 
 class ChatService:
@@ -41,33 +74,33 @@ class ChatService:
             log.warning(f'聊天消息加载失败: {e}')
             raise errors.RequestError(msg='聊天消息格式非法') from e
 
-        if len(current_messages) != 1:
-            raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
-        current_message = current_messages[-1]
-        if not isinstance(current_message, ModelRequest) or not is_user_prompt_message(message=current_message):
-            raise errors.RequestError(msg='最后一条消息必须是用户消息')
+        first_part = _get_current_user_prompt_part(messages=current_messages)
+        prompt, has_binary_input = _parse_user_prompt(first_part=first_part)
+        if not prompt and not has_binary_input:
+            raise errors.RequestError(msg='当前轮用户消息不能为空')
         run_context = protocol_adapter.build_run_context(
             conversation_id=obj.conversation_id,
             forwarded_props=obj.forwarded_props,
         )
         conversation_id = run_context.conversation_id
         forwarded_props = run_context.forwarded_props
-        first_part = current_message.parts[0]
-        if not isinstance(first_part, UserPromptPart):
-            raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
-        content_items = [first_part.content] if isinstance(first_part.content, str) else first_part.content
-        prompt_parts = [item for item in content_items if isinstance(item, str)]
-        has_binary_input = len(prompt_parts) != len(content_items)
-        prompt = ' '.join(' '.join(part.split()) for part in prompt_parts if part.split())
-        if not prompt and not has_binary_input:
-            raise errors.RequestError(msg='当前轮用户消息不能为空')
-        payload_messages = to_jsonable_python(current_messages, by_alias=True)
-        assert isinstance(payload_messages, list)
 
         agent_session = None
         try:
             async with async_db_session() as db:
                 agent_session, agent = await open_chat_session(db=db, forwarded_props=forwarded_props)
+            current_messages = protocol_adapter.sanitize_input_messages(
+                agent=agent,
+                run_context=run_context,
+                messages=current_messages,
+            )
+            first_part = _get_current_user_prompt_part(messages=current_messages)
+            prompt, has_binary_input = _parse_user_prompt(first_part=first_part)
+            if not prompt and not has_binary_input:
+                raise errors.RequestError(msg='当前轮用户消息不能为空')
+            payload_messages = to_jsonable_python(current_messages, by_alias=True)
+            assert isinstance(payload_messages, list)
+            user_message_record = build_chat_message_record(role='user', model_messages=payload_messages)
             async with async_db_session.begin() as session:
                 conversation = await ai_conversation_service.get_owned_conversation(
                     db=session,
@@ -112,9 +145,9 @@ class ChatService:
                             'provider_id': forwarded_props.provider_id,
                             'model_id': forwarded_props.model_id,
                             'message_index': next_message_index + index,
-                            'message': message,
+                            **record,
                         }
-                        for index, message in enumerate(payload_messages)
+                        for index, record in enumerate([user_message_record])
                     ],
                 )
 

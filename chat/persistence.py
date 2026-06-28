@@ -1,4 +1,6 @@
-from pydantic_ai import ModelResponse, TextPart
+from typing import Any
+
+from pydantic_ai import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,49 @@ from backend.plugin.ai.dataclasses import CompletionPersistenceContext, Regenera
 from backend.plugin.ai.protocol.base import ChatModelMessage
 from backend.plugin.ai.schema.conversation import CreateAIConversationParam, UpdateAIConversationParam
 from backend.plugin.ai.utils.conversation_control import normalize_generated_conversation_title
+from backend.plugin.ai.utils.message_storage import build_chat_message_record
+
+
+def _is_user_prompt_message(message: ChatModelMessage) -> bool:
+    """
+    判断是否为用户消息
+
+    :param message: 模型消息
+    :return:
+    """
+    return isinstance(message, ModelRequest) and bool(message.parts) and isinstance(message.parts[0], UserPromptPart)
+
+
+def _build_chat_message_records(
+    *,
+    messages: list[ChatModelMessage],
+    payload_messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    按用户可见聊天消息构建持久化载荷
+
+    :param messages: 原始模型消息
+    :param payload_messages: 原始模型消息 JSON
+    :return:
+    """
+    chat_message_records: list[dict[str, Any]] = []
+    assistant_messages: list[dict[str, Any]] = []
+
+    def flush_assistant_messages() -> None:
+        if not assistant_messages:
+            return
+        chat_message_records.append(build_chat_message_record(role='assistant', model_messages=assistant_messages))
+        assistant_messages.clear()
+
+    for message, payload_message in zip(messages, payload_messages, strict=False):
+        if _is_user_prompt_message(message):
+            flush_assistant_messages()
+            chat_message_records.append(build_chat_message_record(role='user', model_messages=[payload_message]))
+            continue
+        assistant_messages.append(payload_message)
+
+    flush_assistant_messages()
+    return chat_message_records
 
 
 async def persist_completion(
@@ -31,6 +76,10 @@ async def persist_completion(
         return
     payload_messages = to_jsonable_python(messages, by_alias=True)
     assert isinstance(payload_messages, list)
+    chat_message_records = _build_chat_message_records(
+        messages=messages,
+        payload_messages=payload_messages,
+    )
 
     current = await ai_conversation_dao.get_by_conversation_id_for_update(db, persistence.conversation_id)
     normalized_title = normalize_generated_conversation_title(title=persistence.title)
@@ -72,9 +121,9 @@ async def persist_completion(
                 'provider_id': persistence.forwarded_props.provider_id,
                 'model_id': persistence.forwarded_props.model_id,
                 'message_index': next_message_index + offset,
-                'message': message,
+                **record,
             }
-            for offset, message in enumerate(payload_messages)
+            for offset, record in enumerate(chat_message_records)
         ],
     )
 
@@ -99,6 +148,10 @@ async def persist_regeneration(
     assert isinstance(payload_messages, list)
     if not any(message.get('kind') == 'response' for message in payload_messages):
         return
+    chat_message_records = _build_chat_message_records(
+        messages=messages,
+        payload_messages=payload_messages,
+    )
 
     # 锁定当前用户对话，保护短事务写入顺序
     conversation = await ai_conversation_dao.get_by_conversation_id_for_update(db, persistence.conversation_id)
@@ -118,7 +171,7 @@ async def persist_regeneration(
             replace_end_index,
         )
         old_message_count = replace_end_index - persistence.replace_start_index + 1
-        message_index_offset = len(payload_messages) - old_message_count
+        message_index_offset = len(chat_message_records) - old_message_count
         if message_index_offset:
             await ai_message_dao.update_message_indexes_offset(
                 db,
@@ -132,7 +185,7 @@ async def persist_regeneration(
             db,
             persistence.conversation_id,
             persistence.insert_before_index,
-            len(payload_messages),
+            len(chat_message_records),
         )
         message_index = persistence.insert_before_index
     else:
@@ -146,9 +199,9 @@ async def persist_regeneration(
                 'provider_id': persistence.forwarded_props.provider_id,
                 'model_id': persistence.forwarded_props.model_id,
                 'message_index': message_index + offset,
-                'message': message,
+                **record,
             }
-            for offset, message in enumerate(payload_messages)
+            for offset, record in enumerate(chat_message_records)
         ],
     )
 

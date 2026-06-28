@@ -26,6 +26,7 @@ class ChatConversationState:
     conversation: AIConversation | None
     message_rows: list[AIMessage]
     model_messages: list[ModelRequest | ModelResponse]
+    row_model_message_ranges: list[tuple[int, int]]
     context_start_index: int
 
 

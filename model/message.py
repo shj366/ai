@@ -17,4 +17,5 @@ class AIMessage(Base):
     provider_id: Mapped[int] = mapped_column(sa.BigInteger, comment='供应商 ID')
     model_id: Mapped[str] = mapped_column(sa.String(512), comment='模型 ID')
     message_index: Mapped[int] = mapped_column(index=True, comment='消息索引')
-    message: Mapped[dict[str, Any]] = mapped_column(sa.JSON(), comment='原始模型消息')
+    role: Mapped[str] = mapped_column(sa.String(16), comment='消息角色')
+    model_messages: Mapped[list[dict[str, Any]]] = mapped_column(sa.JSON(), comment='原始 Pydantic 模型消息列表')
