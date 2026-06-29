@@ -7,12 +7,13 @@ import anyio
 from pydantic_ai.capabilities import Toolset
 from pydantic_ai.tools import RunContext
 from pydantic_ai.toolsets import FunctionToolset
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 
 from backend.core.path_conf import UPLOAD_DIR
 from backend.database.db import async_db_session
 from backend.plugin.ai.capabilities.base import function_tools_allowed
 from backend.plugin.ai.dataclasses import CapabilityContext, CapabilityResult, ChatAgentDeps
+from backend.plugin.attachment_export.core.attachment_download import attachment_download_service
 
 HTML_PAGE_DIR = 'ai_pages'
 MAX_HTML_PAGE_BYTES = 600_000
@@ -49,6 +50,18 @@ def _ensure_html_document(html: str, title: str | None) -> str:
 </body>
 </html>
 """
+
+
+async def _get_all_attachment_entity_ids(entity_type: str) -> list[int]:
+    normalized_type = attachment_download_service.normalize_type(entity_type)
+    model = attachment_download_service._get_model(normalized_type)
+
+    async with async_db_session() as db:
+        stmt = select(model.id).where(model.file_url.is_not(None))
+        if hasattr(model, 'parent_id'):
+            stmt = stmt.where((model.parent_id.is_(None)) | (model.parent_id == 0))
+        result = await db.execute(stmt.order_by(model.id.asc()))
+        return [int(item) for item in result.scalars().all()]
 
 
 async def build_local_ai_toolset_capability(ctx: CapabilityContext) -> CapabilityResult:  # noqa: RUF029
@@ -135,18 +148,37 @@ async def build_local_ai_toolset_capability(ctx: CapabilityContext) -> Capabilit
     async def download_attachments(
         ctx: RunContext[ChatAgentDeps],
         entity_type: str,
-        entity_ids: list[int],
+        entity_ids: list[int] | None = None,
     ) -> str:
         """
-        Prepare downloading attachments for business entities.
+        Prepare downloading original attachment files for business entities.
+
+        Use this tool whenever the user asks to download, export, pack, or get attachments/files for business records.
+        Requests such as "下载公司所有商标", "下载全部资质附件", or "打包专利文件" must use this tool, not HTML generation.
+        If the user asks for all records of a supported entity type, omit entity_ids or pass an empty list.
+        The frontend will use the returned action to download a ZIP file.
+        Supported entity_type values include: qualification/company_qualification/资质/公司资质,
+        patent/intellectual_property_patent/专利, trademark/intellectual_property_trademark/商标,
+        software/intellectual_property_software/软件著作权/软件, credential/staff_credential/员工证件/证件.
 
         :param ctx: Run context
         :param entity_type: Business entity type
-        :param entity_ids: Business entity IDs
+        :param entity_ids: Optional business entity IDs. Empty means all records with attachments.
         :return:
         """
         _ = ctx
-        normalized_ids = [int(item) for item in entity_ids if int(item) > 0]
+        normalized_ids = [int(item) for item in entity_ids or [] if int(item) > 0]
+        if not normalized_ids:
+            normalized_ids = await _get_all_attachment_entity_ids(entity_type)
+        if not normalized_ids:
+            return json.dumps(
+                {
+                    'error': f'No attachment records found for entity type: {entity_type}',
+                    'message': '未找到可下载附件的记录。',
+                },
+                ensure_ascii=False,
+            )
+
         return json.dumps(
             {
                 'action': 'download_attachments',
@@ -166,6 +198,10 @@ async def build_local_ai_toolset_capability(ctx: CapabilityContext) -> Capabilit
     ) -> str:
         """
         Create a static HTML query or presentation page and return preview/download metadata.
+
+        Use this only when the user explicitly asks to create/generate an HTML page, web page, visual report page,
+        preview page, QR-code-accessible page, or shareable page.
+        Do not use this tool for requests to download business attachments or original files; use download_attachments instead.
 
         :param ctx: Run context
         :param title: Page title
