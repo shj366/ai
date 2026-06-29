@@ -1,14 +1,54 @@
 import json
+import re
+import secrets
 from datetime import date, datetime
 
+import anyio
 from pydantic_ai.capabilities import Toolset
 from pydantic_ai.tools import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy import inspect, text
 
+from backend.core.path_conf import UPLOAD_DIR
 from backend.database.db import async_db_session
 from backend.plugin.ai.capabilities.base import function_tools_allowed
 from backend.plugin.ai.dataclasses import CapabilityContext, CapabilityResult, ChatAgentDeps
+
+HTML_PAGE_DIR = 'ai_pages'
+MAX_HTML_PAGE_BYTES = 600_000
+
+
+def _normalize_html_page_filename(title: str | None) -> str:
+    stem = re.sub(r'[^A-Za-z0-9_-]+', '-', title or 'ai-page').strip('-').lower()
+    stem = stem[:48] or 'ai-page'
+    return f'{stem}-{secrets.token_hex(6)}.html'
+
+
+def _ensure_html_document(html: str, title: str | None) -> str:
+    content = html.strip()
+    if len(content.encode('utf-8')) > MAX_HTML_PAGE_BYTES:
+        raise ValueError('HTML content is too large')
+    if re.search(r'<\s*script\b', content, flags=re.IGNORECASE):
+        raise ValueError('Script tags are not allowed in generated HTML pages')
+    if re.search(r'\son[a-z]+\s*=', content, flags=re.IGNORECASE):
+        raise ValueError('Inline event handlers are not allowed in generated HTML pages')
+
+    if '<html' in content.lower():
+        return content
+
+    safe_title = (title or 'AI 生成查询页').replace('<', '&lt;').replace('>', '&gt;')
+    return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{safe_title}</title>
+</head>
+<body>
+{content}
+</body>
+</html>
+"""
 
 
 async def build_local_ai_toolset_capability(ctx: CapabilityContext) -> CapabilityResult:  # noqa: RUF029
@@ -113,6 +153,49 @@ async def build_local_ai_toolset_capability(ctx: CapabilityContext) -> Capabilit
                 'entity_type': entity_type,
                 'entity_ids': normalized_ids,
                 'message': f'prepared to download {len(normalized_ids)} item attachments',
+            },
+            ensure_ascii=False,
+        )
+
+    @toolset.tool
+    async def create_query_html_page(
+        ctx: RunContext[ChatAgentDeps],
+        title: str,
+        html: str,
+        description: str | None = None,
+    ) -> str:
+        """
+        Create a static HTML query or presentation page and return preview/download metadata.
+
+        :param ctx: Run context
+        :param title: Page title
+        :param html: Complete HTML document or body HTML. Do not include script tags.
+        :param description: Optional page description
+        :return:
+        """
+        _ = ctx
+        try:
+            content = _ensure_html_document(html, title)
+        except ValueError as e:
+            return json.dumps({'error': str(e)}, ensure_ascii=False)
+
+        filename = _normalize_html_page_filename(title)
+        relative_path = f'{HTML_PAGE_DIR}/{filename}'
+        output_dir = UPLOAD_DIR / HTML_PAGE_DIR
+        await anyio.Path(output_dir).mkdir(parents=True, exist_ok=True)
+        async with await anyio.open_file(output_dir / filename, mode='w', encoding='utf-8') as file:
+            await file.write(content)
+
+        url = f'/static/upload/{relative_path}'
+        return json.dumps(
+            {
+                'action': 'show_html_page',
+                'title': title,
+                'description': description or '',
+                'url': url,
+                'download_url': url,
+                'filename': filename,
+                'message': 'HTML 页面已生成，可打开预览、下载或扫码访问。',
             },
             ensure_ascii=False,
         )
