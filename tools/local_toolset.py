@@ -58,6 +58,8 @@ async def _get_all_attachment_entity_ids(entity_type: str) -> list[int]:
 
     async with async_db_session() as db:
         stmt = select(model.id).where(model.file_url.is_not(None))
+        if hasattr(model, 'deleted'):
+            stmt = stmt.where(model.deleted == 0)
         if hasattr(model, 'parent_id'):
             stmt = stmt.where((model.parent_id.is_(None)) | (model.parent_id == 0))
         result = await db.execute(stmt.order_by(model.id.asc()))
