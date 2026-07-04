@@ -8,12 +8,13 @@ from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
 class AIInvocationContext:
     """AI 调用策略上下文"""
 
-    user_id: int
     provider_id: int
     provider_type: AIProviderType
     provider_name: str
     model_pk: int
     model_id: str
+    user_id: int
+    is_superuser: bool = False
     mcp_ids: tuple[int, ...] = ()
     generation_type: AIChatGenerationType | None = None
     conversation_id: str | None = None

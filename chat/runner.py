@@ -1,6 +1,7 @@
 from pydantic_ai import ModelRequest, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.common.context import ctx
 from backend.common.exception import errors
 from backend.plugin.ai.chat.session import AgentSession
 from backend.plugin.ai.crud.crud_model import ai_model_dao
@@ -57,12 +58,13 @@ async def open_chat_session(
     invocation_context = None
     if user_id is not None:
         invocation_context = AIInvocationContext(
-            user_id=user_id,
             provider_id=provider.id,
             provider_type=AIProviderType(provider.type),
             provider_name=provider.name,
             model_pk=model.id,
             model_id=model.model_id,
+            user_id=user_id,
+            is_superuser=ctx.is_superuser,
             mcp_ids=tuple(forwarded_props.mcp_ids or ()),
             generation_type=forwarded_props.generation_type,
             conversation_id=conversation_id,
