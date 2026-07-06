@@ -255,6 +255,7 @@ def serialize_messages_to_snapshot(
     message_ids: Sequence[int | None] | None = None,
     provider_ids: Sequence[int | None] | None = None,
     model_ids: Sequence[str | None] | None = None,
+    message_indexes: Sequence[int | None] | None = None,
 ) -> AIChatAgUiMessagesSnapshotDetail:
     """
     序列化模型消息为快照
@@ -264,6 +265,7 @@ def serialize_messages_to_snapshot(
     :param message_ids: 持久化消息 ID 列表
     :param provider_ids: 供应商 ID 列表
     :param model_ids: 模型 ID 列表
+    :param message_indexes: 持久化消息索引列表
     :return:
     """
     snapshot_messages: list[AIChatAgUiSnapshotMessageDetail] = []
@@ -272,32 +274,31 @@ def serialize_messages_to_snapshot(
         message_ids or [None] * len(messages),
         provider_ids or [None] * len(messages),
         model_ids or [None] * len(messages),
+        message_indexes or [None] * len(messages),
         strict=False,
     )
-    for message, message_id, provider_id, model_id in message_contexts:
-        message_index = len(snapshot_messages)
+    for fallback_index, (message, message_id, provider_id, model_id, message_index) in enumerate(message_contexts):
+        resolved_message_index = fallback_index if message_index is None else message_index
         if isinstance(message, ModelRequest):
-            snapshot_messages.extend(
-                serialize_request_message(
-                    message=message,
-                    conversation_id=conversation_id,
-                    message_id=message_id,
-                    provider_id=provider_id,
-                    model_id=model_id,
-                    message_index=message_index,
-                )
+            request_messages = serialize_request_message(
+                message=message,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                message_index=resolved_message_index,
             )
+            snapshot_messages.extend(request_messages)
             continue
         if isinstance(message, ModelResponse):
-            snapshot_messages.extend(
-                serialize_response_message(
-                    message=message,
-                    conversation_id=conversation_id,
-                    message_id=message_id,
-                    provider_id=provider_id,
-                    model_id=model_id,
-                    message_index=message_index,
-                )
+            response_messages = serialize_response_message(
+                message=message,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                provider_id=provider_id,
+                model_id=model_id,
+                message_index=resolved_message_index,
             )
+            snapshot_messages.extend(response_messages)
 
     return AIChatAgUiMessagesSnapshotDetail(messages=snapshot_messages)

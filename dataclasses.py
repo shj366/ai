@@ -26,6 +26,7 @@ class ChatConversationState:
     conversation: AIConversation | None
     message_rows: list[AIMessage]
     model_messages: list[ModelRequest | ModelResponse]
+    row_model_message_ranges: list[tuple[int, int]]
     context_start_index: int
 
 
@@ -49,7 +50,6 @@ class CapabilityContext:
     supported_native_tools: frozenset[type[AbstractNativeTool]]
     supports_image_output: bool
     has_builtin_tools: bool
-    has_function_tool_sources: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +62,7 @@ class CapabilityResult:
 
 
 @dataclass(frozen=True, slots=True)
-class CompletionPersistence:
+class CompletionPersistenceContext:
     """普通聊天完成持久化上下文"""
 
     conversation_id: str
@@ -70,18 +70,17 @@ class CompletionPersistence:
     forwarded_props: AIChatForwardedPropsParam
     title: str
     result_offset: int
+    assistant_message_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class RegenerationPersistence:
+class RegenerationPersistenceContext:
     """重生成完成持久化上下文"""
 
     conversation_id: str
     user_id: int
     forwarded_props: AIChatForwardedPropsParam
     result_offset: int
-    response_id: int | None = None
-    message_index: int | None = None
     insert_before_index: int | None = None
     replace_start_index: int | None = None
     replace_end_index: int | None = None

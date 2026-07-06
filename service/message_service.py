@@ -1,6 +1,7 @@
 from copy import deepcopy
+from typing import Any
 
-from pydantic_ai import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai import AgentRunResult, ModelRequest, ModelResponse, UserPromptPart
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
@@ -14,7 +15,7 @@ from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import (
     ChatConversationState,
     ChatRunContext,
-    RegenerationPersistence,
+    RegenerationPersistenceContext,
 )
 from backend.plugin.ai.model import AIMessage
 from backend.plugin.ai.protocol.base import ChatAgent, ChatProtocolAdapter
@@ -23,10 +24,90 @@ from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam, AIChatRegen
 from backend.plugin.ai.schema.conversation import UpdateAIConversationParam
 from backend.plugin.ai.schema.message import UpdateAIMessageParam
 from backend.plugin.ai.service.conversation_service import ai_conversation_service
+from backend.plugin.ai.utils.message_storage import (
+    expand_message_rows,
+    get_message_row_model_message_payloads,
+    get_row_model_messages,
+)
 
 
 class AIMessageService:
     """AI 消息服务"""
+
+    @staticmethod
+    def _get_row_model_message_ranges(
+        *,
+        message_rows: list[AIMessage],
+        model_messages: list[ModelRequest | ModelResponse],
+        row_model_message_ranges: list[tuple[int, int]] | None = None,
+    ) -> list[tuple[int, int]]:
+        """
+        获取消息行到模型消息的范围映射
+
+        :param message_rows: 消息行列表
+        :param model_messages: 模型消息列表
+        :param row_model_message_ranges: 已存在的范围映射
+        :return:
+        """
+        if row_model_message_ranges is not None:
+            return row_model_message_ranges
+        if len(message_rows) == len(model_messages):
+            return [(index, index + 1) for index in range(len(message_rows))]
+        _, ranges = expand_message_rows(message_rows)
+        return ranges
+
+    def _get_row_messages(
+        self,
+        *,
+        message_rows: list[AIMessage],
+        model_messages: list[ModelRequest | ModelResponse],
+        row_index: int,
+        row_model_message_ranges: list[tuple[int, int]] | None = None,
+    ) -> list[ModelRequest | ModelResponse]:
+        """
+        获取消息行对应的模型消息
+
+        :param message_rows: 消息行列表
+        :param model_messages: 模型消息列表
+        :param row_index: 消息行索引
+        :param row_model_message_ranges: 行到模型消息范围映射
+        :return:
+        """
+        ranges = self._get_row_model_message_ranges(
+            message_rows=message_rows,
+            model_messages=model_messages,
+            row_model_message_ranges=row_model_message_ranges,
+        )
+        return get_row_model_messages(
+            model_messages=model_messages,
+            row_message_ranges=ranges,
+            row_index=row_index,
+        )
+
+    def _is_user_message_row(
+        self,
+        *,
+        message_rows: list[AIMessage],
+        model_messages: list[ModelRequest | ModelResponse],
+        row_index: int,
+        row_model_message_ranges: list[tuple[int, int]] | None = None,
+    ) -> bool:
+        """
+        判断是否为用户消息行
+
+        :param message_rows: 消息行列表
+        :param model_messages: 模型消息列表
+        :param row_index: 消息行索引
+        :param row_model_message_ranges: 行到模型消息范围映射
+        :return:
+        """
+        row_messages = self._get_row_messages(
+            message_rows=message_rows,
+            model_messages=model_messages,
+            row_index=row_index,
+            row_model_message_ranges=row_model_message_ranges,
+        )
+        return len(row_messages) == 1 and is_user_prompt_message(message=row_messages[0])
 
     @staticmethod
     def _get_message_row_index(*, message_rows: list[AIMessage], pk: int) -> int:
@@ -42,12 +123,13 @@ class AIMessageService:
             raise errors.NotFoundError(msg='消息不存在')
         return message_row_index
 
-    @staticmethod
     def _get_reply_segment_indexes(
+        self,
         *,
         message_rows: list[AIMessage],
         model_messages: list[ModelRequest | ModelResponse],
         reply_start_index: int,
+        row_model_message_ranges: list[tuple[int, int]] | None = None,
     ) -> tuple[int | None, int | None, int | None]:
         """
         获取回复段的消息索引范围
@@ -55,15 +137,26 @@ class AIMessageService:
         :param message_rows: 消息行列表
         :param model_messages: 模型消息列表
         :param reply_start_index: 回复段起始行索引
+        :param row_model_message_ranges: 行到模型消息范围映射
         :return:
         """
         if reply_start_index >= len(message_rows):
             return None, None, None
-        if is_user_prompt_message(message=model_messages[reply_start_index]):
+        if self._is_user_message_row(
+            message_rows=message_rows,
+            model_messages=model_messages,
+            row_index=reply_start_index,
+            row_model_message_ranges=row_model_message_ranges,
+        ):
             return None, None, message_rows[reply_start_index].message_index
         reply_end_index = reply_start_index
-        for index in range(reply_start_index + 1, len(model_messages)):
-            if is_user_prompt_message(message=model_messages[index]):
+        for index in range(reply_start_index + 1, len(message_rows)):
+            if self._is_user_message_row(
+                message_rows=message_rows,
+                model_messages=model_messages,
+                row_index=index,
+                row_model_message_ranges=row_model_message_ranges,
+            ):
                 break
             reply_end_index = index
         return (
@@ -103,7 +196,12 @@ class AIMessageService:
         )
         forwarded_props = run_context.forwarded_props
         async with async_db_session() as db:
-            session, agent = await open_chat_session(db=db, forwarded_props=forwarded_props)
+            session, agent = await open_chat_session(
+                db=db,
+                forwarded_props=forwarded_props,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
             state = await ai_conversation_service.get_chat_state(
                 db=db,
                 conversation_id=conversation_id,
@@ -137,47 +235,62 @@ class AIMessageService:
             conversation_id=conversation_id,
             obj=obj,
         )
-        target_index = self._get_message_row_index(message_rows=state.message_rows, pk=pk)
-        target_message = state.model_messages[target_index]
-        if not isinstance(target_message, ModelRequest) or not is_user_prompt_message(message=target_message):
-            raise errors.RequestError(msg='仅支持根据用户消息重生成')
-        if target_index < state.context_start_index:
-            raise errors.RequestError(msg='指定消息已不在当前上下文中')
+        try:
+            row_model_message_ranges = getattr(state, 'row_model_message_ranges', None)
+            target_index = self._get_message_row_index(message_rows=state.message_rows, pk=pk)
+            target_messages = self._get_row_messages(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                row_index=target_index,
+                row_model_message_ranges=row_model_message_ranges,
+            )
+            if len(target_messages) != 1 or not is_user_prompt_message(message=target_messages[0]):
+                raise errors.RequestError(msg='仅支持根据用户消息重生成')
+            target_start_index, target_end_index = self._get_row_model_message_ranges(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                row_model_message_ranges=row_model_message_ranges,
+            )[target_index]
+            if target_start_index < state.context_start_index:
+                raise errors.RequestError(msg='指定消息已不在当前上下文中')
 
-        reply_start_index = target_index + 1
-        message_history = state.model_messages[state.context_start_index : target_index + 1]
-        replace_start_index, replace_end_index, insert_before_index = self._get_reply_segment_indexes(
-            message_rows=state.message_rows,
-            model_messages=state.model_messages,
-            reply_start_index=reply_start_index,
-        )
-        if replace_start_index is not None:
-            persistence = RegenerationPersistence(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                forwarded_props=forwarded_props,
-                result_offset=len(message_history),
-                replace_start_index=replace_start_index,
-                replace_end_index=replace_end_index,
+            reply_start_index = target_index + 1
+            message_history = state.model_messages[state.context_start_index : target_end_index]
+            replace_start_index, replace_end_index, insert_before_index = self._get_reply_segment_indexes(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                reply_start_index=reply_start_index,
+                row_model_message_ranges=row_model_message_ranges,
             )
-        elif insert_before_index is not None:
-            persistence = RegenerationPersistence(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                forwarded_props=forwarded_props,
-                result_offset=len(message_history),
-                message_index=insert_before_index,
-                insert_before_index=insert_before_index,
-            )
-        else:
-            persistence = RegenerationPersistence(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                forwarded_props=forwarded_props,
-                result_offset=len(message_history),
-            )
+            if replace_start_index is not None:
+                persistence = RegenerationPersistenceContext(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    forwarded_props=forwarded_props,
+                    result_offset=len(message_history),
+                    replace_start_index=replace_start_index,
+                    replace_end_index=replace_end_index,
+                )
+            elif insert_before_index is not None:
+                persistence = RegenerationPersistenceContext(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    forwarded_props=forwarded_props,
+                    result_offset=len(message_history),
+                    insert_before_index=insert_before_index,
+                )
+            else:
+                persistence = RegenerationPersistenceContext(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    forwarded_props=forwarded_props,
+                    result_offset=len(message_history),
+                )
+        except Exception:
+            await session.aclose()
+            raise
 
-        async def on_complete(result) -> None:  # noqa: ANN001
+        async def on_complete(result: AgentRunResult[Any]) -> None:
             async with async_db_session.begin() as db:
                 await persist_regeneration(
                     db=db,
@@ -223,41 +336,69 @@ class AIMessageService:
             conversation_id=conversation_id,
             obj=obj,
         )
-        target_index = self._get_message_row_index(message_rows=state.message_rows, pk=pk)
-        if not isinstance(state.model_messages[target_index], ModelResponse):
-            raise errors.RequestError(msg='仅支持根据 AI 回复重生成')
-        if target_index < state.context_start_index:
-            raise errors.RequestError(msg='指定消息已不在当前上下文中')
+        try:
+            row_model_message_ranges = getattr(state, 'row_model_message_ranges', None)
+            target_index = self._get_message_row_index(message_rows=state.message_rows, pk=pk)
+            target_messages = self._get_row_messages(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                row_index=target_index,
+                row_model_message_ranges=row_model_message_ranges,
+            )
+            if not any(isinstance(message, ModelResponse) for message in target_messages):
+                raise errors.RequestError(msg='仅支持根据 AI 回复重生成')
+            target_start_index, _ = self._get_row_model_message_ranges(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                row_model_message_ranges=row_model_message_ranges,
+            )[target_index]
+            if target_start_index < state.context_start_index:
+                raise errors.RequestError(msg='指定消息已不在当前上下文中')
 
-        user_message_index = next(
-            (
-                index
-                for index in range(target_index - 1, state.context_start_index - 1, -1)
-                if is_user_prompt_message(message=state.model_messages[index])
-            ),
-            None,
-        )
-        if user_message_index is None:
-            raise errors.RequestError(msg='未找到对应的用户消息')
+            row_ranges = self._get_row_model_message_ranges(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                row_model_message_ranges=row_model_message_ranges,
+            )
+            user_message_index = target_index - 1
+            target_row = state.message_rows[target_index]
+            has_adjacent_user_message = (
+                user_message_index >= 0
+                and state.message_rows[user_message_index].message_index == target_row.message_index - 1
+                and row_ranges[user_message_index][0] >= state.context_start_index
+                and self._is_user_message_row(
+                    message_rows=state.message_rows,
+                    model_messages=state.model_messages,
+                    row_index=user_message_index,
+                    row_model_message_ranges=row_model_message_ranges,
+                )
+            )
+            if not has_adjacent_user_message:
+                raise errors.RequestError(msg='未找到对应的用户消息')
 
-        message_history = state.model_messages[state.context_start_index : user_message_index + 1]
-        replace_start_index, replace_end_index, _ = self._get_reply_segment_indexes(
-            message_rows=state.message_rows,
-            model_messages=state.model_messages,
-            reply_start_index=user_message_index + 1,
-        )
-        if replace_start_index is None:
-            raise errors.RequestError(msg='未找到对应的 AI 回复段')
-        persistence = RegenerationPersistence(
-            conversation_id=conversation_id,
-            user_id=user_id,
-            forwarded_props=forwarded_props,
-            result_offset=len(message_history),
-            replace_start_index=replace_start_index,
-            replace_end_index=replace_end_index,
-        )
+            _, user_message_end_index = row_ranges[user_message_index]
+            message_history = state.model_messages[state.context_start_index : user_message_end_index]
+            replace_start_index, replace_end_index, _ = self._get_reply_segment_indexes(
+                message_rows=state.message_rows,
+                model_messages=state.model_messages,
+                reply_start_index=user_message_index + 1,
+                row_model_message_ranges=row_model_message_ranges,
+            )
+            if replace_start_index is None:
+                raise errors.RequestError(msg='未找到对应的 AI 回复段')
+            persistence = RegenerationPersistenceContext(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                forwarded_props=forwarded_props,
+                result_offset=len(message_history),
+                replace_start_index=replace_start_index,
+                replace_end_index=replace_end_index,
+            )
+        except Exception:
+            await session.aclose()
+            raise
 
-        async def on_complete(result) -> None:  # noqa: ANN001
+        async def on_complete(result: AgentRunResult[Any]) -> None:
             async with async_db_session.begin() as db:
                 await persist_regeneration(
                     db=db,
@@ -304,13 +445,17 @@ class AIMessageService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
-        model_messages = (
-            ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
-        )
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
+        model_messages, row_model_message_ranges = expand_message_rows(message_rows)
         message_row_index = self._get_message_row_index(message_rows=message_rows, pk=pk)
-        target_message = model_messages[message_row_index]
-        if not isinstance(target_message, ModelRequest):
+        target_messages = self._get_row_messages(
+            message_rows=message_rows,
+            model_messages=model_messages,
+            row_index=message_row_index,
+            row_model_message_ranges=row_model_message_ranges,
+        )
+        target_message = target_messages[0] if target_messages else None
+        if len(target_messages) != 1 or not isinstance(target_message, ModelRequest):
             raise errors.RequestError(msg='仅支持编辑用户消息')
         if not target_message.parts or not isinstance(target_message.parts[0], UserPromptPart):
             raise errors.RequestError(msg='仅支持编辑用户消息')
@@ -320,9 +465,11 @@ class AIMessageService:
         content = ' '.join(obj.content.split())
         if not content:
             raise errors.RequestError(msg='消息内容不能为空')
-        payload = deepcopy(message_rows[message_row_index].message)
-        payload['parts'][0]['content'] = content
-        return await ai_message_dao.update(db, pk, {'message': payload})
+        model_messages_payload = deepcopy(get_message_row_model_message_payloads(message_rows[message_row_index]))
+        model_payload = deepcopy(model_messages_payload[0])
+        model_payload['parts'][0]['content'] = content
+        model_messages_payload[0] = model_payload
+        return await ai_message_dao.update(db, pk, {'model_messages': model_messages_payload})
 
     @staticmethod
     async def clear(
@@ -384,34 +531,46 @@ class AIMessageService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         target_message_index = self._get_message_row_index(message_rows=message_rows, pk=pk)
+        model_messages, row_model_message_ranges = expand_message_rows(message_rows)
+        if not self._is_user_message_row(
+            message_rows=message_rows,
+            model_messages=model_messages,
+            row_index=target_message_index,
+            row_model_message_ranges=row_model_message_ranges,
+        ):
+            target_row_messages = self._get_row_messages(
+                message_rows=message_rows,
+                model_messages=model_messages,
+                row_index=target_message_index,
+                row_model_message_ranges=row_model_message_ranges,
+            )
+            if not any(isinstance(message, ModelResponse) for message in target_row_messages):
+                raise errors.RequestError(msg='仅支持删除用户消息或 AI 回复')
+        target_row = message_rows[target_message_index]
 
-        remaining_message_rows = [row for row in message_rows if row.id != pk]
-        if not remaining_message_rows:
-            await ai_message_dao.delete(db, conversation_id)
-            return await ai_conversation_dao.delete(db, conversation_id, user_id)
-
-        await ai_message_dao.delete_message(db, pk)
+        count = await ai_message_dao.delete_message(db, pk)
 
         context_start_message_id = conversation.context_start_message_id
         if context_start_message_id == pk:
-            previous_rows = message_rows[:target_message_index]
+            previous_rows = [row for row in message_rows if row.message_index < target_row.message_index]
             context_start_message_id = previous_rows[-1].id if previous_rows else None
-        return await ai_conversation_dao.update(
-            db,
-            conversation.id,
-            UpdateAIConversationParam(
-                conversation_id=conversation.conversation_id,
-                title=conversation.title,
-                provider_id=remaining_message_rows[-1].provider_id,
-                model_id=remaining_message_rows[-1].model_id,
-                user_id=conversation.user_id,
-                pinned_time=conversation.pinned_time,
-                context_start_message_id=context_start_message_id,
-                context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
-            ),
-        )
+            await ai_conversation_dao.update(
+                db,
+                conversation.id,
+                UpdateAIConversationParam(
+                    conversation_id=conversation.conversation_id,
+                    title=conversation.title,
+                    provider_id=conversation.provider_id,
+                    model_id=conversation.model_id,
+                    user_id=conversation.user_id,
+                    pinned_time=conversation.pinned_time,
+                    context_start_message_id=context_start_message_id,
+                    context_cleared_time=conversation.context_cleared_time if context_start_message_id else None,
+                ),
+            )
+        return count
 
 
 ai_message_service: AIMessageService = AIMessageService()

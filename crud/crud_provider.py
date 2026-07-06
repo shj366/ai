@@ -50,7 +50,7 @@ class CRUDAIProvider(CRUDPlus[AIProvider]):
         :param db: 数据库会话
         :return:
         """
-        return await self.select_models(db, status=StatusType.enable.value, deleted=0)
+        return await self.select_models_order(db, 'id', 'desc', status=StatusType.enable.value, deleted=0)
 
     async def create(self, db: AsyncSession, obj: CreateAIProviderParam) -> None:
         """

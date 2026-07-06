@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
+from backend.plugin.ai.enums import AIMessageStatus
 from backend.plugin.ai.model import AIMessage
 from backend.utils.timezone import timezone
 
@@ -30,12 +31,23 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        stmt = (
-            select(self.model)
-            .where(self.model.conversation_id == conversation_id, self.model.deleted == 0)
-            .order_by(self.model.message_index.asc(), self.model.id.asc())
+        return await self.select_models_order(db, 'id', 'asc', conversation_id=conversation_id, deleted=0)
+
+    async def get_all_by_message_index(self, db: AsyncSession, conversation_id: str) -> Sequence[AIMessage]:
+        """
+        按聊天上下文顺序获取对话全部消息
+
+        :param db: 数据库会话
+        :param conversation_id: 对话 ID
+        :return:
+        """
+        return await self.select_models_order(
+            db,
+            ['message_index', 'id'],
+            ['asc', 'asc'],
+            conversation_id=conversation_id,
+            deleted=0,
         )
-        return (await db.scalars(stmt)).all()
 
     async def get_select(self, conversation_id: str) -> Select:
         """
@@ -44,11 +56,7 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        return (
-            select(self.model)
-            .where(self.model.conversation_id == conversation_id, self.model.deleted == 0)
-            .order_by(self.model.message_index.asc(), self.model.id.asc())
-        )
+        return await self.select_order('id', 'asc', conversation_id=conversation_id, deleted=0)
 
     async def get_next_message_index(self, db: AsyncSession, conversation_id: str) -> int:
         """
@@ -58,12 +66,45 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        stmt = select(func.max(self.model.message_index)).where(
-            self.model.conversation_id == conversation_id,
-            self.model.deleted == 0,
+        messages = await self.select_models_order(
+            db,
+            'message_index',
+            'desc',
+            conversation_id=conversation_id,
+            deleted=0,
+            limit=1,
         )
-        max_message_index = await db.scalar(stmt)
-        return (max_message_index if max_message_index is not None else -1) + 1
+        last_message = messages[0] if messages else None
+        return (last_message.message_index if last_message is not None else -1) + 1
+
+    async def has_pending(self, db: AsyncSession, conversation_id: str) -> bool:
+        """
+        检查对话是否存在待完成消息
+
+        :param db: 数据库会话
+        :param conversation_id: 对话 ID
+        :return:
+        """
+        message = await self.select_model_by_column(
+            db,
+            conversation_id=conversation_id,
+            status=AIMessageStatus.pending,
+            deleted=0,
+        )
+        return message is not None
+
+    async def create(self, db: AsyncSession, obj: dict[str, Any]) -> AIMessage:
+        """
+        创建单条消息并返回 ORM 对象
+
+        :param db: 数据库会话
+        :param obj: 消息字段
+        :return:
+        """
+        message = self.model(**obj)
+        db.add(message)
+        await db.flush()
+        return message
 
     async def bulk_create(self, db: AsyncSession, objs: list[dict[str, Any]]) -> None:
         """

@@ -13,8 +13,10 @@ from backend.database.db import async_db_session
 from backend.plugin.ai.chat.builder import build_model_settings
 from backend.plugin.ai.chat.persistence import persist_completion, persist_error_message
 from backend.plugin.ai.chat.pipeline import assemble_capabilities
-from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatRunContext, CompletionPersistence
+from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatRunContext, CompletionPersistenceContext
 from backend.plugin.ai.enums import AIChatGenerationType
+from backend.plugin.ai.policy.context import AIInvocationContext, AIInvocationResult
+from backend.plugin.ai.policy.registry import notify_ai_invocation_result
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter
 from backend.plugin.ai.providers.base import ProviderAdapter
 from backend.plugin.ai.providers.http import build_retry_http_client
@@ -35,6 +37,7 @@ class AgentSession:
         self.model = model
         self._http_client = http_client
         self._closed = False
+        self.invocation_context: AIInvocationContext | None = None
 
     @classmethod
     async def open(
@@ -105,7 +108,7 @@ class AgentSession:
         )
         model_settings = build_model_settings(adapter=self.adapter, forwarded_props=forwarded_props)
         output_type: Any = [BinaryImage, str] if forwarded_props.generation_type == AIChatGenerationType.image else str
-        return Agent(
+        return Agent(  # type: ignore
             name='fba-chat',
             deps_type=ChatAgentDeps,
             model=self.model,
@@ -123,7 +126,7 @@ class AgentSession:
         protocol_adapter: ChatProtocolAdapter,
         accept: str | None,
         message_history: list[ChatModelMessage],
-        persistence: CompletionPersistence | None = None,
+        persistence: CompletionPersistenceContext | None = None,
         on_complete: Callable[[AgentRunResult[Any]], Awaitable[None]] | None = None,
         on_run_error: Callable[[str], Awaitable[None]] | None = None,
     ) -> StreamingResponse:
@@ -159,6 +162,17 @@ class AgentSession:
             assert persistence is not None
             await persist_error_message(persistence=persistence, error_message=message)
 
+        async def complete_with_policy(result: AgentRunResult[Any]) -> None:
+            await (on_complete or default_on_complete)(result)
+            if self.invocation_context is None:
+                return
+            async with async_db_session.begin() as db:
+                await notify_ai_invocation_result(
+                    db=db,
+                    context=self.invocation_context,
+                    result=AIInvocationResult.from_agent_result(result),
+                )
+
         async def on_finish() -> None:
             try:
                 await self.aclose()
@@ -171,7 +185,7 @@ class AgentSession:
             run_context=run_context,
             accept=accept,
             message_history=message_history,
-            on_complete=on_complete or default_on_complete,
+            on_complete=complete_with_policy,
             on_run_error=on_run_error or default_on_run_error,
             on_finish=on_finish,
         )

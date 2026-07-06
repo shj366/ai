@@ -1,6 +1,5 @@
 from typing import Any
 
-from pydantic_ai import ModelMessagesTypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -17,6 +16,7 @@ from backend.plugin.ai.schema.conversation import (
     UpdateAIConversationTitleParam,
 )
 from backend.plugin.ai.utils.conversation_control import normalize_conversation_title
+from backend.plugin.ai.utils.message_storage import expand_message_row_metadata, expand_message_rows
 from backend.utils.timezone import timezone
 
 
@@ -85,11 +85,13 @@ class AIConversationService:
                 conversation=None,
                 message_rows=[],
                 model_messages=[],
+                row_model_message_ranges=[],
                 context_start_index=0,
             )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         if require_messages and not message_rows:
             raise errors.RequestError(msg='对话消息不存在')
+        model_messages, row_model_message_ranges = expand_message_rows(message_rows)
         context_start_index = 0
         if conversation.context_start_message_id is not None:
             boundary_index = next(
@@ -97,15 +99,12 @@ class AIConversationService:
                 None,
             )
             if boundary_index is not None:
-                context_start_index = boundary_index + 1
+                context_start_index = row_model_message_ranges[boundary_index][1]
         return ChatConversationState(
             conversation=conversation,
             message_rows=message_rows,
-            model_messages=(
-                list(ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]))
-                if message_rows
-                else []
-            ),
+            model_messages=model_messages,
+            row_model_message_ranges=row_model_message_ranges,
             context_start_index=context_start_index,
         )
 
@@ -123,17 +122,20 @@ class AIConversationService:
             conversation_id=conversation_id,
             user_id=user_id,
         )
-        message_rows = await ai_message_dao.get_all(db, conversation.conversation_id)
-        model_messages = (
-            ModelMessagesTypeAdapter.validate_python([row.message for row in message_rows]) if message_rows else []
+        message_rows = await ai_message_dao.get_all_by_message_index(db, conversation.conversation_id)
+        model_messages, row_model_message_ranges = expand_message_rows(message_rows)
+        message_ids, provider_ids, model_ids, message_indexes = expand_message_row_metadata(
+            message_rows,
+            row_model_message_ranges,
         )
         protocol_adapter = get_chat_protocol_adapter()
         messages_snapshot = protocol_adapter.serialize_messages_to_snapshot(
             model_messages,
             conversation_id=conversation.conversation_id,
-            message_ids=[row.id for row in message_rows],
-            provider_ids=[row.provider_id for row in message_rows],
-            model_ids=[row.model_id for row in message_rows],
+            message_ids=message_ids,
+            provider_ids=provider_ids,
+            model_ids=model_ids,
+            message_indexes=message_indexes,
         )
         return GetAIConversationDetail(
             id=conversation.id,
@@ -247,7 +249,7 @@ class AIConversationService:
             user_id=user_id,
             for_update=True,
         )
-        message_rows = list(await ai_message_dao.get_all(db, conversation_id))
+        message_rows = list(await ai_message_dao.get_all_by_message_index(db, conversation_id))
         context_start_message_id = message_rows[-1].id if message_rows else None
         context_cleared_time = timezone.now() if message_rows else None
         return await ai_conversation_dao.update(

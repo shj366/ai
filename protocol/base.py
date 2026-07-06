@@ -13,7 +13,7 @@ ChatAgent: TypeAlias = Agent[ChatAgentDeps, ChatAgentOutput]
 
 
 class ChatProtocolAdapter(Protocol):
-    """聊天协议适配器。"""
+    """聊天协议适配器"""
 
     name: str
 
@@ -22,6 +22,23 @@ class ChatProtocolAdapter(Protocol):
         解析当前轮输入消息列表
 
         :param messages: 协议输入消息列表
+        :return:
+        """
+        ...
+
+    def sanitize_input_messages(
+        self,
+        *,
+        agent: ChatAgent,
+        run_context: ChatRunContext,
+        messages: Sequence[ModelMessage],
+    ) -> list[ModelMessage]:
+        """
+        清洗当前轮输入消息
+
+        :param agent: 聊天代理
+        :param run_context: 协议运行上下文
+        :param messages: 模型消息列表
         :return:
         """
         ...
@@ -80,6 +97,7 @@ class ChatProtocolAdapter(Protocol):
         message_ids: Sequence[int | None] | None = None,
         provider_ids: Sequence[int | None] | None = None,
         model_ids: Sequence[str | None] | None = None,
+        message_indexes: Sequence[int | None] | None = None,
     ) -> Any:
         """
         序列化模型消息为协议快照
@@ -89,6 +107,7 @@ class ChatProtocolAdapter(Protocol):
         :param message_ids: 持久化消息 ID 列表
         :param provider_ids: 供应商 ID 列表
         :param model_ids: 模型 ID 列表
+        :param message_indexes: 持久化消息索引列表
         :return:
         """
         ...
