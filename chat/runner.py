@@ -3,10 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.context import ctx
 from backend.common.exception import errors
+from backend.plugin.ai.chat.generation.registry import get_generation_handler
 from backend.plugin.ai.chat.session import AgentSession
 from backend.plugin.ai.crud.crud_model import ai_model_dao
 from backend.plugin.ai.crud.crud_provider import ai_provider_dao
-from backend.plugin.ai.enums import AIChatGenerationType, AIProviderType
+from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.policy.context import AIInvocationContext
 from backend.plugin.ai.policy.registry import validate_ai_invocation
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage
@@ -45,11 +46,8 @@ async def open_chat_session(
         raise errors.NotFoundError(msg='供应商不存在')
     if not provider.status:
         raise errors.RequestError(msg='此供应商暂不可用，请更换供应商或联系系统管理员')
-    if forwarded_props.generation_type == AIChatGenerationType.image and provider.type not in {
-        AIProviderType.google,
-        AIProviderType.openai_responses,
-    }:
-        raise errors.RequestError(msg='当前图片生成仅支持 Google 或 OpenAI Responses 供应商')
+    generation_handler = get_generation_handler(forwarded_props.generation_type)
+    generation_handler.validate_provider_type(provider.type)
     model = await ai_model_dao.get_by_model_and_provider(db, forwarded_props.model_id, forwarded_props.provider_id)
     if not model:
         raise errors.NotFoundError(msg='供应商模型不存在')
@@ -80,7 +78,11 @@ async def open_chat_session(
     )
     session.invocation_context = invocation_context
     try:
-        agent = await session.build_agent(db=db, forwarded_props=forwarded_props)
+        agent = await session.build_agent(
+            db=db,
+            forwarded_props=forwarded_props,
+            generation_handler=generation_handler,
+        )
     except ValueError as exc:
         await session.aclose()
         raise errors.RequestError(msg=f'模型配置无效: {exc}') from exc

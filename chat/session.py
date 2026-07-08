@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-from pydantic_ai import Agent, AgentRunResult, BinaryImage
+from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
@@ -11,10 +11,10 @@ from starlette.responses import StreamingResponse
 from backend.common.log import log
 from backend.database.db import async_db_session
 from backend.plugin.ai.chat.builder import build_model_settings
+from backend.plugin.ai.chat.generation.base import GenerationHandler
 from backend.plugin.ai.chat.persistence import persist_completion, persist_error_message
 from backend.plugin.ai.chat.pipeline import assemble_capabilities
 from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatRunContext, CompletionPersistenceContext
-from backend.plugin.ai.enums import AIChatGenerationType
 from backend.plugin.ai.policy.context import AIInvocationContext, AIInvocationResult
 from backend.plugin.ai.policy.registry import notify_ai_invocation_result
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter
@@ -86,12 +86,14 @@ class AgentSession:
         *,
         db: AsyncSession,
         forwarded_props: AIChatForwardedPropsParam,
+        generation_handler: GenerationHandler,
     ) -> ChatAgent:
         """
         构建聊天代理
 
         :param db: 数据库会话
         :param forwarded_props: 聊天扩展参数
+        :param generation_handler: 生成模式处理器
         :return:
         """
         profile = self.model.profile
@@ -107,7 +109,7 @@ class AgentSession:
             supports_image_output=supports_image_output,
         )
         model_settings = build_model_settings(adapter=self.adapter, forwarded_props=forwarded_props)
-        output_type: Any = [BinaryImage, str] if forwarded_props.generation_type == AIChatGenerationType.image else str
+        output_type = generation_handler.get_output_type()
         return Agent(  # type: ignore
             name='fba-chat',
             deps_type=ChatAgentDeps,
