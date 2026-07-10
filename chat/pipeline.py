@@ -10,6 +10,7 @@ from backend.plugin.ai.capabilities.base import CapabilityBuilder
 from backend.plugin.ai.capabilities.builtin_toolset import build_builtin_toolset_capability
 from backend.plugin.ai.capabilities.code_execution import build_code_execution_capability
 from backend.plugin.ai.capabilities.code_mode import build_code_mode_capability
+from backend.plugin.ai.capabilities.context_management import build_context_management_capabilities
 from backend.plugin.ai.capabilities.image import build_image_generation_capability
 from backend.plugin.ai.capabilities.mcp import build_mcp_capability
 from backend.plugin.ai.capabilities.search import build_search_capabilities
@@ -21,6 +22,7 @@ from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 
 _CAPABILITY_BUILDERS: tuple[CapabilityBuilder, ...] = (
     build_thinking_capability,
+    build_context_management_capabilities,
     build_mcp_capability,
     build_search_capabilities,
     build_code_execution_capability,
