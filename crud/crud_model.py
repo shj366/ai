@@ -70,6 +70,28 @@ class CRUDAIModel(CRUDPlus[AIModel]):
 
         return await self.select_models(db, **filters)
 
+    async def get_all_by_providers(
+        self,
+        db: AsyncSession,
+        provider_ids: list[int],
+        *,
+        status: int | None = None,
+    ) -> Sequence[AIModel]:
+        """
+        通过供应商 ID 列表获取所有模型
+
+        :param db: 数据库会话
+        :param provider_ids: 供应商 ID 列表
+        :param status: 状态
+        :return:
+        """
+        if not provider_ids:
+            return []
+        filters = {'provider_id__in': provider_ids, 'deleted': 0}
+        if status is not None:
+            filters['status'] = status
+        return await self.select_models(db, **filters)
+
     async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[AIModel]:
         """
         批量获取模型
