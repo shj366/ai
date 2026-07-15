@@ -42,7 +42,12 @@ class OpenAIResponsesAdapter(ProviderAdapter):
         :return:
         """
         base_url = normalize_provider_api_host(self.provider_type, base_url)
-        openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=http_client)
+        openai_client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            max_retries=0,
+            http_client=http_client,
+        )
         return OpenAIResponsesModel(model_name, provider=OpenAIProvider(openai_client=openai_client))
 
     def resolve_extra_settings(self, *, forwarded_props: AIChatForwardedPropsParam) -> dict[str, Any]:
