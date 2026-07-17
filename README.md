@@ -27,7 +27,7 @@ AI_HTTP_MAX_RETRIES = 5
 AI_MCP_MAX_RETRIES = 1
 ```
 
-在 `backend/core/conf.py` 中添加以下内容：
+当前项目的 `backend/core/conf.py` 已包含以下字段：
 
 ```python
 ##################################################
