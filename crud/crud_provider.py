@@ -23,6 +23,18 @@ class CRUDAIProvider(CRUDPlus[AIProvider]):
         """
         return await self.select_model(db, pk, deleted=0)
 
+    async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[AIProvider]:
+        """
+        批量获取供应商
+
+        :param db: 数据库会话
+        :param pks: 供应商 ID 列表
+        :return:
+        """
+        if not pks:
+            return []
+        return await self.select_models(db, id__in=pks, deleted=0)
+
     async def get_select(self, name: str | None, type: int | None, status: int | None) -> Select:
         """
         获取供应商列表查询表达式

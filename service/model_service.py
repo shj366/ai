@@ -20,7 +20,7 @@ from backend.plugin.ai.schema.model import (
 
 
 class AIModelService:
-    """AI 模型服务"""
+    """AI 模型服务类"""
 
     @staticmethod
     async def get_all(*, db: AsyncSession, provider_id: int) -> Sequence[AIModel]:
@@ -97,13 +97,17 @@ class AIModelService:
         """
         pairs: list[tuple[int, str]] = []
         pair_set: set[tuple[int, str]] = set()
+        provider_ids = list({item.provider_id for item in obj.items})
+        providers = await ai_provider_dao.get_by_ids(db, provider_ids)
+        providers_by_id = {provider.id: provider for provider in providers}
+        if len(providers_by_id) != len(provider_ids):
+            raise errors.NotFoundError(msg='供应商不存在')
+
         for item in obj.items:
             pair = (item.provider_id, item.model_id)
             if pair in pair_set:
                 raise errors.RequestError(msg='本次请求中存在重复模型，请检查后重试')
-            provider = await ai_provider_dao.get(db, item.provider_id)
-            if not provider:
-                raise errors.NotFoundError(msg='供应商不存在')
+            provider = providers_by_id[item.provider_id]
             if provider.type == AIProviderType.openrouter and '/' not in item.model_id:
                 raise errors.RequestError(msg='OpenRouter 模型 ID 必须包含供应商前缀，例如 openai/gpt-4o-mini')
             pair_set.add(pair)
