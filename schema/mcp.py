@@ -8,8 +8,8 @@ from backend.plugin.ai.enums import McpType
 from backend.plugin.ai.utils.api_key_ops import mask_sensitive_data
 
 
-class McpSchemaBase(SchemaBase):
-    """MCP 基础模型"""
+class AIMcpSchemaBase(SchemaBase):
+    """AI MCP 基础模型"""
 
     name: str = Field(description='MCP 名称')
     command: str | None = Field(None, description='MCP 命令')
@@ -30,16 +30,16 @@ class McpSchemaBase(SchemaBase):
         return str(url) if url else None
 
 
-class CreateMcpParam(McpSchemaBase):
-    """创建 MCP 参数"""
+class CreateAIMcpParam(AIMcpSchemaBase):
+    """创建 AI MCP 参数"""
 
 
-class UpdateMcpParam(McpSchemaBase):
-    """更新 MCP 参数"""
+class UpdateAIMcpParam(AIMcpSchemaBase):
+    """更新 AI MCP 参数"""
 
 
-class GetMcpDetail(McpSchemaBase):
-    """MCP 详情"""
+class GetAIMcpDetail(AIMcpSchemaBase):
+    """AI MCP 详情"""
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -4,15 +4,15 @@ from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
-from backend.plugin.ai.model import Mcp
-from backend.plugin.ai.schema.mcp import CreateMcpParam, UpdateMcpParam
+from backend.plugin.ai.model import AIMcp
+from backend.plugin.ai.schema.mcp import CreateAIMcpParam, UpdateAIMcpParam
 from backend.utils.timezone import timezone
 
 
-class CRUDMcp(CRUDPlus[Mcp]):
-    """MCP 数据库操作类"""
+class CRUDAIMcp(CRUDPlus[AIMcp]):
+    """AI MCP 数据库操作类"""
 
-    async def get(self, db: AsyncSession, pk: int) -> Mcp | None:
+    async def get(self, db: AsyncSession, pk: int) -> AIMcp | None:
         """
         获取 MCP
 
@@ -22,7 +22,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         """
         return await self.select_model(db, pk, deleted=0)
 
-    async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[Mcp]:
+    async def get_by_ids(self, db: AsyncSession, pks: list[int]) -> Sequence[AIMcp]:
         """
         获取指定 MCP 列表
 
@@ -32,7 +32,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         """
         return await self.select_models(db, id__in=pks, deleted=0)
 
-    async def get_by_name(self, db: AsyncSession, name: str) -> Mcp | None:
+    async def get_by_name(self, db: AsyncSession, name: str) -> AIMcp | None:
         """
         通过名称获取 MCP
 
@@ -59,7 +59,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
 
         return await self.select_order('id', 'desc', **filters)
 
-    async def get_all(self, db: AsyncSession) -> Sequence[Mcp]:
+    async def get_all(self, db: AsyncSession) -> Sequence[AIMcp]:
         """
         获取所有 MCP
 
@@ -68,7 +68,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         """
         return await self.select_models(db, deleted=0)
 
-    async def create(self, db: AsyncSession, obj: CreateMcpParam) -> None:
+    async def create(self, db: AsyncSession, obj: CreateAIMcpParam) -> None:
         """
         创建 MCP
 
@@ -78,7 +78,7 @@ class CRUDMcp(CRUDPlus[Mcp]):
         """
         await self.create_model(db, obj)
 
-    async def update(self, db: AsyncSession, pk: int, obj: UpdateMcpParam) -> int:
+    async def update(self, db: AsyncSession, pk: int, obj: UpdateAIMcpParam) -> int:
         """
         更新 MCP
 
@@ -109,4 +109,4 @@ class CRUDMcp(CRUDPlus[Mcp]):
         )
 
 
-mcp_dao: CRUDMcp = CRUDMcp(Mcp)
+ai_mcp_dao: CRUDAIMcp = CRUDAIMcp(AIMcp)
