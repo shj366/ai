@@ -1,7 +1,7 @@
 [plugin]
 icon = "https://wu-clan.github.io/picx-images-hosting/logo/fba.svg"
 summary = "AI"
-version = "0.4.0"
+version = "0.5.0"
 description = "为系统提供 AI 赋能"
 author = "wu-clan"
 tags = ["agent", "ai", "mcp"]
@@ -12,8 +12,9 @@ depends_on = ["config"]
 router = ["v1"]
 
 [settings]
-AI_CODE_MODE_TOOLS = []
-AI_CODE_MODE_MAX_RETRIES = 3
 AI_CODE_MODE_DYNAMIC_CATALOG = false
+AI_CODE_MODE_MAX_RETRIES = 3
+AI_CODE_MODE_TOOLS = []
+AI_CONTEXT_WARNING_THRESHOLD = 0.8
 AI_HTTP_MAX_RETRIES = 5
 AI_MCP_MAX_RETRIES = 1

@@ -5,6 +5,7 @@ from pydantic import ConfigDict, Field, HttpUrl, field_serializer
 
 from backend.common.schema import SchemaBase
 from backend.plugin.ai.enums import McpType
+from backend.plugin.ai.utils.api_key_ops import mask_sensitive_data
 
 
 class McpSchemaBase(SchemaBase):
@@ -45,3 +46,8 @@ class GetMcpDetail(McpSchemaBase):
     id: int = Field(description='MCP ID')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
+
+    @field_serializer('headers', 'env')
+    def serialize_sensitive_data(self, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """脱敏序列化 MCP 敏感配置"""
+        return mask_sensitive_data(value)

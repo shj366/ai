@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, TypeAlias
 
+import anyio
+
 from ag_ui.core import BaseEvent, RunAgentInput, RunErrorEvent
 from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelRequest, ModelResponse
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -11,6 +13,62 @@ from backend.plugin.ai.dataclasses import ChatAgentDeps
 ChatModelMessage: TypeAlias = ModelRequest | ModelResponse
 ChatAgentOutput: TypeAlias = BinaryImage | str
 ChatAgent: TypeAlias = Agent[ChatAgentDeps, ChatAgentOutput]
+
+
+class _StreamLifecycle:
+    """流式回调生命周期"""
+
+    def __init__(
+        self,
+        *,
+        on_complete: Callable[[AgentRunResult[Any]], Awaitable[None]],
+        on_run_error: Callable[[str], Awaitable[None]],
+    ) -> None:
+        self.on_complete = on_complete
+        self.on_run_error = on_run_error
+        self.run_finished = False
+        self.error_handled = False
+
+    async def complete(self, result: AgentRunResult[Any]) -> None:
+        """幂等执行完成回调"""
+        if self.run_finished or self.error_handled:
+            return
+        await self.on_complete(result)
+        self.run_finished = True
+
+    async def handle_error(self, message: str) -> None:
+        """幂等执行错误回调"""
+        if self.run_finished or self.error_handled:
+            return
+        await self.on_run_error(message)
+        self.error_handled = True
+
+
+async def _stream_with_lifecycle(
+    *,
+    event_stream: AsyncIterator[BaseEvent],
+    lifecycle: _StreamLifecycle,
+    on_finish: Callable[[], Awaitable[None]] | None,
+) -> AsyncIterator[BaseEvent]:
+    """消费事件流并保证中断清理"""
+    try:
+        async for event in event_stream:
+            if isinstance(event, RunErrorEvent):
+                await lifecycle.handle_error(event.message or '')
+            yield event
+    finally:
+        with anyio.CancelScope(shield=True):
+            try:
+                if not lifecycle.run_finished and not lifecycle.error_handled:
+                    await lifecycle.handle_error('生成已中断')
+            finally:
+                try:
+                    aclose = getattr(event_stream, 'aclose', None)
+                    if aclose is not None:
+                        await aclose()
+                finally:
+                    if on_finish:
+                        await on_finish()
 
 
 async def ag_ui_event_encoder(stream: AsyncIterator[BaseEvent]) -> AsyncIterator[str]:
@@ -48,33 +106,28 @@ def build_streaming_response(
     :param on_finish: 流结束回调
     :return:
     """
-    adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
+    adapter = AGUIAdapter(
+        agent=agent,
+        run_input=run_input,
+        accept=accept,
+        allow_uploaded_files=True,
+        preserve_file_data=True,
+    )
+    lifecycle = _StreamLifecycle(on_complete=on_complete, on_run_error=on_run_error)
     event_stream = adapter.run_stream(
         deps=ChatAgentDeps(user_id=user_id),
         message_history=message_history,
-        on_complete=on_complete,
+        on_complete=lifecycle.complete,
     )
-
-    async def stream_with_error_callback() -> AsyncIterator[BaseEvent]:
-        error_handled = False
-        try:
-            async for event in event_stream:
-                if isinstance(event, RunErrorEvent) and not error_handled:
-                    error_handled = True
-                    await on_run_error(event.message or '')
-                yield event
-        finally:
-            try:
-                aclose = getattr(event_stream, 'aclose', None)
-                if aclose is not None:
-                    await aclose()
-            finally:
-                if on_finish:
-                    await on_finish()
-
     event_stream_handler = adapter.build_event_stream()
     response = StreamingResponse(
-        ag_ui_event_encoder(stream_with_error_callback()),
+        ag_ui_event_encoder(
+            _stream_with_lifecycle(
+                event_stream=event_stream,
+                lifecycle=lifecycle,
+                on_finish=on_finish,
+            )
+        ),
         headers=event_stream_handler.response_headers,
         media_type=event_stream_handler.content_type,
     )

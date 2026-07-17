@@ -10,18 +10,20 @@ from backend.plugin.ai.capabilities.base import CapabilityBuilder
 from backend.plugin.ai.capabilities.builtin_toolset import build_builtin_toolset_capability
 from backend.plugin.ai.capabilities.code_execution import build_code_execution_capability
 from backend.plugin.ai.capabilities.code_mode import build_code_mode_capability
+from backend.plugin.ai.capabilities.context_management import build_context_management_capabilities
 from backend.plugin.ai.capabilities.extensions import build_extension_capabilities
 from backend.plugin.ai.capabilities.image import build_image_generation_capability
 from backend.plugin.ai.capabilities.mcp import build_mcp_capability
 from backend.plugin.ai.capabilities.search import build_search_capabilities
 from backend.plugin.ai.capabilities.thinking import build_thinking_capability
-from backend.plugin.ai.dataclasses import CapabilityContext
+from backend.plugin.ai.dataclasses import CapabilityContext, ContextManagementPolicy
 from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.providers.base import ProviderAdapter
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 
 _CAPABILITY_BUILDERS: tuple[CapabilityBuilder, ...] = (
     build_thinking_capability,
+    build_context_management_capabilities,
     build_mcp_capability,
     build_search_capabilities,
     build_code_execution_capability,
@@ -40,6 +42,7 @@ async def assemble_capabilities(
     supports_tools: bool,
     supported_native_tools: frozenset[type[AbstractNativeTool]],
     supports_image_output: bool,
+    context_management: ContextManagementPolicy,
 ) -> list[AbstractCapability[Any]]:
     """
     按顺序运行 capability 构建器并校验能力组合
@@ -50,6 +53,7 @@ async def assemble_capabilities(
     :param supports_tools: 是否支持函数工具
     :param supported_native_tools: 支持的原生工具集合
     :param supports_image_output: 是否支持图片输出
+    :param context_management: 上下文管理策略
     :return:
     """
     capabilities: list[AbstractCapability[Any]] = []
@@ -65,6 +69,7 @@ async def assemble_capabilities(
             supported_native_tools=supported_native_tools,
             supports_image_output=supports_image_output,
             has_builtin_tools=has_builtin,
+            context_management=context_management,
         )
         outcomes = await builder(ctx)
         normalized: Sequence[Any] = outcomes if isinstance(outcomes, Sequence) else (outcomes,)
