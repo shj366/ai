@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -66,15 +66,15 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        # 单次聚合查询，避免先拉实体再取字段
-        result = await db.execute(
-            select(func.max(self.model.message_index)).where(
-                self.model.conversation_id == conversation_id,
-                self.model.deleted == 0,
-            )
+        rows = await self.select_models_order(
+            db,
+            'message_index',
+            'desc',
+            conversation_id=conversation_id,
+            deleted=0,
+            limit=1,
         )
-        max_index = result.scalar_one_or_none()
-        return (max_index if max_index is not None else -1) + 1
+        return (rows[0].message_index if rows else -1) + 1
 
     async def has_pending(self, db: AsyncSession, conversation_id: str) -> bool:
         """
@@ -84,13 +84,12 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param conversation_id: 对话 ID
         :return:
         """
-        message = await self.select_model_by_column(
+        return await self.exists(
             db,
             conversation_id=conversation_id,
             status=AIMessageStatus.pending,
             deleted=0,
         )
-        return message is not None
 
     async def create(self, db: AsyncSession, obj: dict[str, Any]) -> AIMessage:
         """
@@ -142,7 +141,6 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         """
         if offset == 0:
             return 0
-        # 单条 UPDATE，避免先 SELECT 再逐行 bulk_update
         result = await db.execute(
             update(self.model)
             .where(
@@ -218,21 +216,19 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         :param end_message_index: 结束消息索引
         :return:
         """
-        # 单条 UPDATE（deleted = id），避免先 SELECT 再逐行 bulk_update
-        result = await db.execute(
-            update(self.model)
-            .where(
-                self.model.conversation_id == conversation_id,
-                self.model.message_index >= start_message_index,
-                self.model.message_index <= end_message_index,
-                self.model.deleted == 0,
-            )
-            .values(
-                deleted=self.model.id,
-                deleted_time=timezone.now(),
-            )
+        return await self.delete_model_by_column(
+            db,
+            allow_multiple=True,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            conversation_id=conversation_id,
+            message_index__ge=start_message_index,
+            message_index__le=end_message_index,
+            deleted=0,
         )
-        return result.rowcount or 0
 
     async def delete_message(self, db: AsyncSession, pk: int) -> int:
         """

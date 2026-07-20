@@ -31,8 +31,6 @@ class CRUDAIProvider(CRUDPlus[AIProvider]):
         :param pks: 供应商 ID 列表
         :return:
         """
-        if not pks:
-            return []
         return await self.select_models(db, id__in=pks, deleted=0)
 
     async def get_select(self, name: str | None, type: int | None, status: int | None) -> Select:
@@ -80,7 +78,7 @@ class CRUDAIProvider(CRUDPlus[AIProvider]):
 
         :param db: 数据库会话
         :param pk: 供应商 ID
-        :param obj: 更新 供应商参数
+        :param obj: 更新供应商参数
         :return:
         """
         return await self.update_model_by_column(db, obj, id=pk, deleted=0)
