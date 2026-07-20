@@ -60,7 +60,7 @@
 
 后端对话接口以 AG-UI 作为外部协议，以 Pydantic AI `ModelMessage` 作为内部消息与存储格式。AG-UI 主要在请求入口、流式事件输出、历史快照输出三个位置介入
 
-流式运行通过 `capture_run_messages()` 捕获当前 `run_id` 的原生消息。成功时使用 `AgentRunResult.new_messages()`，失败或客户端取消时先关闭 Pydantic AI 原生流，再持久化其生成的 `ModelRequest.state`、`ModelResponse.state` 与 `ToolReturnPart.outcome`。插件不自行配对、过滤或补造工具调用结果，后续历史修复由 Pydantic AI 2.10.0 负责
+流式运行通过 `capture_run_messages()` 捕获当前 `run_id` 的原生消息。成功时使用 `AgentRunResult.new_messages()`，失败或客户端取消时先关闭 Pydantic AI 原生流，再持久化其生成的 `ModelRequest.state`、`ModelResponse.state` 与 `ToolReturnPart.outcome`。插件不自行配对、过滤或补造工具调用结果，后续历史修复由 Pydantic AI（>=2.10.0，当前 2.13.x）负责
 
 ```mermaid
 flowchart TD

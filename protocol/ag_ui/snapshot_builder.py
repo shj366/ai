@@ -76,6 +76,7 @@ _SNAPSHOT_MESSAGE_BUILD_CONFIGS: tuple[SnapshotMessageBuildConfig, ...] = (
         lambda message: {
             'content': message.content,
             'tool_calls': message.tool_calls,
+            'encrypted_value': message.encrypted_value,
         },
         primary_without_suffix=True,
     ),
@@ -96,6 +97,8 @@ _SNAPSHOT_MESSAGE_BUILD_CONFIGS: tuple[SnapshotMessageBuildConfig, ...] = (
             'content': message.content,
             'tool_call_id': message.tool_call_id,
             'error': getattr(message, 'error', None),
+            # 透传 outcome 等非 success 状态（pydantic-ai 编码于 encrypted_value）
+            'encrypted_value': message.encrypted_value,
         },
     ),
     SnapshotMessageBuildConfig(

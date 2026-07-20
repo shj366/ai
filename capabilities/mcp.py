@@ -42,10 +42,10 @@ async def build_mcp_capability(ctx: CapabilityContext) -> Sequence[CapabilityRes
         else:
             if not mcp.url:
                 raise errors.RequestError(msg=f'MCP 缺少 Streamable HTTP URL: {mcp.name}')
+            # Streamable HTTP 的 sse_read_timeout 已弃用；超时由 MCPToolset.read_timeout 控制
             transport = StreamableHttpTransport(
                 url=mcp.url,
                 headers=headers,
-                sse_read_timeout=mcp.read_timeout,
             )
 
         toolset = MCPToolset(
