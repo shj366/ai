@@ -53,3 +53,16 @@ values
 ('状态', 'AI', 'AI_CONFIG_STATUS', '1', false, null, now(), null),
 ('Exa API Key', 'AI', 'AI_EXA_API_KEY', '', false, '用于 AI 联网搜索的 Exa API Key', now(), null),
 ('Tavily API Key', 'AI', 'AI_TAVILY_API_KEY', '', false, '用于 AI 联网搜索的 Tavily API Key', now(), null);
+
+INSERT INTO ai_provider (id, name, type, api_key, api_host, status, remark, created_time, updated_time, deleted, deleted_time)
+VALUES
+(1, 'Hb-AI', 0, 'sk-DRde25MlKMIwhLOK0VoFAAw41oudzaZTv944PE8kr91gMOhc', 'http://59.174.170.138:53101/v1', 1, null, '2026-07-22 10:03:48', '2026-07-22 10:04:52', 0, null);
+
+INSERT INTO ai_model (id, provider_id, model_id, status, remark, created_time, updated_time, deleted, deleted_time)
+VALUES
+(1, 1, 'deepseek-v4-flash', 1, null, '2026-07-22 10:04:06', '2026-07-22 10:05:21', 0, null);
+
+INSERT INTO ai_default_model (id, scene, provider_id, model_id, status, created_time, updated_time, deleted, deleted_time)
+VALUES
+(1, 'assistant', 1, 'deepseek-v4-flash', 1, '2026-07-22 10:06:16', null, 0, null);
+
