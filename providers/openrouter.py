@@ -44,7 +44,12 @@ class OpenRouterAdapter(ProviderAdapter):
         base_url = normalize_provider_api_host(self.provider_type, base_url)
         if base_url:
             provider = OpenRouterProvider(
-                openai_client=AsyncOpenAI(base_url=base_url, api_key=api_key, http_client=http_client),
+                openai_client=AsyncOpenAI(
+                    base_url=base_url,
+                    api_key=api_key,
+                    max_retries=0,
+                    http_client=http_client,
+                ),
             )
         else:
             provider = OpenRouterProvider(api_key=api_key, http_client=http_client)

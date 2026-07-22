@@ -1,12 +1,6 @@
-import warnings
-
 from collections.abc import Sequence
 
-from pydantic_ai_harness.experimental import HarnessExperimentalWarning
-
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore', HarnessExperimentalWarning)
-    from pydantic_ai_harness.experimental.compaction import ClampOversizedMessages, LimitWarner, SlidingWindow
+from pydantic_ai_harness.compaction import ClampOversizedMessages, LimitWarner, SlidingWindow
 
 from backend.plugin.ai.dataclasses import CapabilityContext, CapabilityResult
 from backend.plugin.ai.enums import AIChatGenerationType
@@ -27,9 +21,14 @@ async def build_context_management_capabilities(  # noqa: RUF029
     policy = ctx.context_management
     results: list[CapabilityResult] = []
     if policy.max_part_chars is not None:
+        keep_chars = min(2000, policy.max_part_chars // 10)
         results.append(
             CapabilityResult(
-                capability=ClampOversizedMessages(max_part_chars=policy.max_part_chars),
+                capability=ClampOversizedMessages(
+                    max_part_chars=policy.max_part_chars,
+                    keep_head_chars=keep_chars,
+                    keep_tail_chars=keep_chars,
+                ),
             )
         )
     if policy.max_messages is not None:

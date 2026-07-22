@@ -30,7 +30,7 @@ class AIProviderType(IntEnum):
 
 
 class McpType(IntEnum):
-    """Mcp 类型"""
+    """MCP 类型"""
 
     stdio = 0
     sse = 1
@@ -66,6 +66,7 @@ class AIMessageStatus(StrEnum):
     pending = 'pending'
     success = 'success'
     error = 'error'
+    interrupted = 'interrupted'
 
 
 class AIWebSearchType(StrEnum):

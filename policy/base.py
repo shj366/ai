@@ -10,6 +10,9 @@ class AIResourcePolicy:
         """
         AI 调用前策略校验
 
+        同一调用周期内可使用 ``get_ai_policy_shared()`` 复用已查询数据，
+        避免多个策略重复访问数据库。
+
         :param db: 数据库会话
         :param context: AI 调用策略上下文
         :return:
@@ -25,6 +28,9 @@ class AIResourcePolicy:
     ) -> None:
         """
         AI 调用后策略通知
+
+        同一调用周期内可使用 ``get_ai_policy_shared()`` 复用已查询数据，
+        避免多个策略重复访问数据库。
 
         :param db: 数据库会话
         :param context: AI 调用策略上下文

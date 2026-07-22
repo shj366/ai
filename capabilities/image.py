@@ -35,7 +35,7 @@ async def build_image_generation_capability(ctx: CapabilityContext) -> Capabilit
         raise errors.RequestError(msg='当前模型暂不支持图片生成，请更换模型')
 
     image_supported = ctx.adapter.capabilities['image_supported_fields']
-    image_fields = image_supported if image_supported is not None else frozenset(IMAGE_GENERATION_FIELD_MAP)
+    image_fields = set(image_supported) if image_supported is not None else set(IMAGE_GENERATION_FIELD_MAP)
     image_settings = ctx.forwarded_props.model_dump(include=image_fields, exclude_unset=True, exclude_none=True)
     image_tool_settings = {IMAGE_GENERATION_FIELD_MAP[field]: value for field, value in image_settings.items()}
 

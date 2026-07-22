@@ -100,8 +100,6 @@ class CRUDAIModel(CRUDPlus[AIModel]):
         :param pks: 模型 ID 列表
         :return:
         """
-        if not pks:
-            return []
         return await self.select_models(db, id__in=pks, deleted=0)
 
     async def get_by_provider_model_pairs(self, db: AsyncSession, pairs: list[tuple[int, str]]) -> Sequence[AIModel]:
@@ -135,7 +133,7 @@ class CRUDAIModel(CRUDPlus[AIModel]):
         """
         批量创建模型
 
-        :param db:数据库会话
+        :param db: 数据库会话
         :param objs: 批量创建模型参数
         :return:
         """
@@ -155,7 +153,7 @@ class CRUDAIModel(CRUDPlus[AIModel]):
 
         :param db: 数据库会话
         :param pk: 模型 ID
-        :param obj: 更新 模型参数
+        :param obj: 更新模型参数
         :return:
         """
         return await self.update_model_by_column(db, obj, id=pk, deleted=0)

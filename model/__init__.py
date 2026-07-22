@@ -1,6 +1,6 @@
 from backend.plugin.ai.model.conversation import AIConversation as AIConversation
 from backend.plugin.ai.model.default_model import AIDefaultModel as AIDefaultModel
-from backend.plugin.ai.model.mcp import Mcp as Mcp
+from backend.plugin.ai.model.mcp import AIMcp as AIMcp
 from backend.plugin.ai.model.message import AIMessage as AIMessage
 from backend.plugin.ai.model.model import AIModel as AIModel
 from backend.plugin.ai.model.provider import AIProvider as AIProvider

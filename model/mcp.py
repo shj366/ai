@@ -7,8 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.common.model import Base, UniversalText, id_key
 
 
-class Mcp(Base):
-    """MCP 表"""
+class AIMcp(Base):
+    """AI MCP"""
 
     __tablename__ = 'ai_mcp'
     __table_args__ = (

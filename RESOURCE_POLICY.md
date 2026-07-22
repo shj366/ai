@@ -18,7 +18,9 @@
 - `policy/context.py` 定义调用前后策略上下文
 - `policy/base.py` 定义策略基类与可实现阶段
 - `policy/registry.py` 负责策略注册、调用前校验和调用后通知
+- `policy/runtime.py` 提供同一调用周期的策略共享缓存 `get_ai_policy_shared()`
 - 新策略插件直接从 `backend.plugin.ai.policy.*` 导入策略能力
+- 策略必须串行执行（`AsyncSession` 不可并发）；跨策略复用查询请写入共享缓存，避免 N+1
 
 ## 策略阶段
 
@@ -36,13 +38,16 @@
 - 多个策略按注册顺序依次执行
 - 任一策略拒绝，本次调用拒绝
 - 适合 `ai_group`、`ai_quota`、`ai_tenant`、`ai_billing` 等插件实现调用控制
+- 需要共享用户分组、额度等查询结果时，写入 `get_ai_policy_shared()`，后续策略直接读取
 
 ### 调用后通知
 
 - 用于记录用量、扣减额度、写账单或审计日志
 - 多个策略按注册顺序依次通知
+- 每个策略使用独立 savepoint，单策略失败不影响其他策略
 - 优先使用标准化用量字段，只有确实需要供应商原始信息时再读取 `raw_result`
 - 当前调用后策略异常只记录日志，不影响已完成的主调用流程
+- 跨策略复用查询同样使用 `get_ai_policy_shared()`
 
 ## 后续策略组建议
 
@@ -54,6 +59,8 @@
 ## 后端对话流程
 
 后端对话接口以 AG-UI 作为外部协议，以 Pydantic AI `ModelMessage` 作为内部消息与存储格式。AG-UI 主要在请求入口、流式事件输出、历史快照输出三个位置介入
+
+流式运行通过 `capture_run_messages()` 捕获当前 `run_id` 的原生消息。成功时使用 `AgentRunResult.new_messages()`，失败或客户端取消时先关闭 Pydantic AI 原生流，再持久化其生成的 `ModelRequest.state`、`ModelResponse.state` 与 `ToolReturnPart.outcome`。插件不自行配对、过滤或补造工具调用结果，后续历史修复由 Pydantic AI（>=2.10.0，当前 2.13.x）负责
 
 ```mermaid
 flowchart TD
@@ -74,7 +81,7 @@ flowchart TD
   L4 --> L6["返回当前用户可见资源"]
   L5 --> L6
 
-  A["前端发起 POST 请求<br/>AG-UI messages + forwardedProps"] --> B["后端 ChatService 接收请求"]
+  A["前端发起 POST 请求<br/>AG-UI messages + forwardedProps"] --> B["后端 AIChatService 接收请求"]
 
   B --> C["AG-UI adapter.decode_input_messages<br/>AG-UI messages -> Pydantic AI ModelRequest"]
   C --> D["AG-UI adapter.build_run_context<br/>提取 conversation_id / forwardedProps"]
@@ -98,7 +105,7 @@ flowchart TD
   O --> P["写入 assistant 占位消息<br/>status = pending"]
   P --> Q["提交事务"]
 
-  Q --> R["Pydantic AI Agent.run_stream<br/>开始模型流式推理"]
+  Q --> R["AGUIAdapter.run_stream_native<br/>capture_run_messages 捕获原生状态"]
 
   R --> T{"流式事件来源"}
   T -->|"文本增量"| U["Pydantic AI text delta"]
@@ -117,9 +124,9 @@ flowchart TD
   AB --> AC
 
   R --> AD{"流结束 / 报错 / 中止"}
-  AD -->|"成功"| AE["更新 assistant 占位消息<br/>status = success<br/>model_messages = Pydantic AI ModelResponse"]
-  AD -->|"失败"| AF["更新 assistant 占位消息<br/>status = error<br/>写入错误响应或错误文本"]
-  AD -->|"中止"| AG["结束流式状态<br/>按当前策略保留 pending 或转 error"]
+  AD -->|"成功"| AE["更新 assistant 占位消息<br/>status = success<br/>保存 AgentRunResult.new_messages"]
+  AD -->|"失败"| AF["关闭原生流后更新占位消息<br/>status = error<br/>保存捕获到的原生消息状态"]
+  AD -->|"中止"| AG["关闭原生流后更新占位消息<br/>status = interrupted<br/>保留 interrupted / suspended 状态"]
 
   AE --> AH["notify_ai_invocation_result<br/>调用后策略通知"]
   AH --> AI["遍历策略 after_invoke<br/>额度扣减 / 账单 / 审计"]
@@ -130,6 +137,6 @@ flowchart TD
   AJ --> AK["前端收到流结束<br/>合并 transientMessages / 同步会话状态"]
 
   AL["历史消息接口 / 会话快照"] --> AM["读取 DB<br/>Pydantic AI ModelMessage JSON"]
-  AM --> AN["AG-UI adapter.serialize_messages_to_snapshot<br/>Pydantic AI -> AG-UI snapshot"]
+  AM --> AN["AG-UI adapter.serialize_messages_to_snapshot<br/>按 ModelRequest / ModelResponse.state 构建快照"]
   AN --> AO["返回前端历史消息<br/>AG-UI messages"]
 ```

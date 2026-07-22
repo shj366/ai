@@ -7,7 +7,7 @@ from backend.common.exception import errors
 from backend.core.conf import settings
 from backend.plugin.ai.dataclasses import CapabilityContext, CapabilityResult
 from backend.plugin.ai.enums import McpType
-from backend.plugin.ai.service.mcp_service import mcp_service
+from backend.plugin.ai.service.mcp_service import ai_mcp_service
 
 
 async def build_mcp_capability(ctx: CapabilityContext) -> Sequence[CapabilityResult]:
@@ -19,7 +19,7 @@ async def build_mcp_capability(ctx: CapabilityContext) -> Sequence[CapabilityRes
     """
     if not ctx.forwarded_props.mcp_ids:
         return ()
-    mcps = await mcp_service.get_by_ids(db=ctx.db, mcp_ids=ctx.forwarded_props.mcp_ids)
+    mcps = await ai_mcp_service.get_by_ids(db=ctx.db, mcp_ids=ctx.forwarded_props.mcp_ids)
     results: list[CapabilityResult] = []
     for mcp in mcps:
         headers = {str(key): str(value) for key, value in (mcp.headers or {}).items()}
@@ -42,10 +42,10 @@ async def build_mcp_capability(ctx: CapabilityContext) -> Sequence[CapabilityRes
         else:
             if not mcp.url:
                 raise errors.RequestError(msg=f'MCP 缺少 Streamable HTTP URL: {mcp.name}')
+            # Streamable HTTP 的 sse_read_timeout 已弃用；超时由 MCPToolset.read_timeout 控制
             transport = StreamableHttpTransport(
                 url=mcp.url,
                 headers=headers,
-                sse_read_timeout=mcp.read_timeout,
             )
 
         toolset = MCPToolset(
