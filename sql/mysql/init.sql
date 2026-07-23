@@ -65,4 +65,3 @@ VALUES
 INSERT INTO ai_default_model (id, scene, provider_id, model_id, status, created_time, updated_time, deleted, deleted_time)
 VALUES
 (1, 'assistant', 1, 'deepseek-v4-flash', 1, '2026-07-22 10:06:16', null, 0, null);
-
