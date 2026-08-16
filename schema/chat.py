@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import Field
 
@@ -24,6 +24,8 @@ class AIChatRuntimeParam(AIChatSchemaBase):
     """聊天运行时控制参数"""
 
     enable_builtin_tools: bool = Field(default=True, description='是否启用项目内置工具')
+    enable_code_execution: bool | None = Field(default=None, description='是否启用供应商原生代码执行')
+    enable_web_fetch: bool | None = Field(default=None, description='是否启用供应商原生网页抓取')
     mcp_ids: list[int] | None = Field(default=None, description='启用的 MCP ID 列表')
     web_search: AIWebSearchType = Field(default=AIWebSearchType.off, description='网络搜索模式')
 
@@ -40,8 +42,6 @@ class AIChatModelSettingsParam(AIChatSchemaBase):
     frequency_penalty: float | None = Field(default=None, description='根据新 token 目前在文本中的出现频率进行惩罚')
     logit_bias: dict[str, int] | None = Field(default=None, description='修改完成中出现指定标记的可能性')
     stop_sequences: list[str] | None = Field(default=None, description='这些序列会导致模型停止生成')
-    extra_headers: dict[str, str] | None = Field(default=None, description='发送给模型的额外 Headers')
-    extra_body: dict[str, Any] | None = Field(default=None, description='发送给模型的额外请求体')
     parallel_tool_calls: bool | None = Field(default=None, description='是否允许并行工具调用')
 
 
@@ -101,3 +101,5 @@ class AIChatCompletionParam(AIChatRequestBase):
 
 class AIChatRegenerateParam(AIChatRequestBase):
     """重生成参数"""
+
+    content: str | None = Field(default=None, description='重发时覆盖最后一条用户消息内容，空值保持原文')

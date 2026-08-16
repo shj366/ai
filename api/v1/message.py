@@ -8,7 +8,6 @@ from backend.common.response.response_schema import ResponseModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.database.db import CurrentSessionTransaction
 from backend.plugin.ai.schema.chat import AIChatRegenerateParam
-from backend.plugin.ai.schema.message import UpdateAIMessageParam
 from backend.plugin.ai.service.message_service import ai_message_service
 
 router = APIRouter()
@@ -16,7 +15,7 @@ router = APIRouter()
 
 @router.post(
     '/{conversation_id}/messages/{pk}/regenerate',
-    summary='根据用户消息重生成 AI 回复',
+    summary='根据最后一条用户消息重发',
     dependencies=[DependsJwtAuth],
 )
 async def regenerate_conversation_message(
@@ -32,50 +31,6 @@ async def regenerate_conversation_message(
         obj=obj,
         accept=request.headers.get('accept', SSE_CONTENT_TYPE),
     )
-
-
-@router.post(
-    '/{conversation_id}/messages/{pk}/responses/regenerate',
-    summary='根据 AI 回复重生成',
-    dependencies=[DependsJwtAuth],
-)
-async def regenerate_conversation_response(
-    request: Request,
-    conversation_id: Annotated[str, Path(description='对话 ID')],
-    pk: Annotated[int, Path(gt=0, description='消息 ID')],
-    obj: AIChatRegenerateParam,
-) -> StreamingResponse:
-    return await ai_message_service.regenerate_from_response_message(
-        user_id=request.user.id,
-        conversation_id=conversation_id,
-        pk=pk,
-        obj=obj,
-        accept=request.headers.get('accept', SSE_CONTENT_TYPE),
-    )
-
-
-@router.put(
-    '/{conversation_id}/messages/{pk}',
-    summary='编辑保存指定消息',
-    dependencies=[DependsJwtAuth],
-)
-async def update_conversation_message(
-    request: Request,
-    db: CurrentSessionTransaction,
-    conversation_id: Annotated[str, Path(description='对话 ID')],
-    pk: Annotated[int, Path(gt=0, description='消息 ID')],
-    obj: UpdateAIMessageParam,
-) -> ResponseModel:
-    count = await ai_message_service.update(
-        db=db,
-        user_id=request.user.id,
-        conversation_id=conversation_id,
-        pk=pk,
-        obj=obj,
-    )
-    if count > 0:
-        return response_base.success()
-    return response_base.fail()
 
 
 @router.delete(
