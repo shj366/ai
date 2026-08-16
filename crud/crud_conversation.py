@@ -1,5 +1,7 @@
 from datetime import datetime
 
+import sqlalchemy as sa
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 from sqlalchemy_crud_plus import CRUDPlus
@@ -54,7 +56,10 @@ class CRUDAIConversation(CRUDPlus[AIConversation]):
         :param user_id: 用户 ID
         :return:
         """
-        return await self.select_order('id', 'desc', user_id=user_id, deleted=0)
+        stmt = await self.select(user_id=user_id, deleted=0)
+        pin_rank = sa.case((self.model.pinned_time.is_not(None), 1), else_=0)
+        activity_time = sa.func.coalesce(self.model.updated_time, self.model.created_time)
+        return stmt.order_by(sa.desc(pin_rank), sa.desc(activity_time), sa.desc(self.model.id))
 
     async def create(self, db: AsyncSession, obj: CreateAIConversationParam) -> None:
         """
