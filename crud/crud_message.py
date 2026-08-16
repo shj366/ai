@@ -76,15 +76,15 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         )
         return (rows[0].message_index if rows else -1) + 1
 
-    async def has_pending(self, db: AsyncSession, conversation_id: str) -> bool:
+    async def get_pending(self, db: AsyncSession, conversation_id: str) -> Sequence[AIMessage]:
         """
-        检查对话是否存在待完成消息
+        获取对话中未完成的生成消息
 
         :param db: 数据库会话
         :param conversation_id: 对话 ID
         :return:
         """
-        return await self.exists(
+        return await self.select_models(
             db,
             conversation_id=conversation_id,
             status=AIMessageStatus.pending,
@@ -163,9 +163,9 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         """
         return await self.update_model_by_column(db, obj, id=pk, deleted=0)
 
-    async def finalize_pending(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
+    async def update_pending(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
         """
-        完成待生成消息
+        更新仍处于待生成状态的消息
 
         :param db: 数据库会话
         :param pk: 消息 ID

@@ -131,8 +131,6 @@ class AIChatService:
                             model_id=forwarded_props.model_id,
                             user_id=conversation.user_id,
                             pinned_time=conversation.pinned_time,
-                            context_start_message_id=conversation.context_start_message_id,
-                            context_cleared_time=conversation.context_cleared_time,
                         ),
                     )
                 else:
@@ -180,7 +178,7 @@ class AIChatService:
                     must_exist=True,
                     require_messages=True,
                 )
-                message_history = state.model_messages[state.context_start_index :]
+                message_history = state.model_messages
                 persistence = CompletionPersistenceContext(
                     conversation_id=conversation_id,
                     user_id=user_id,
