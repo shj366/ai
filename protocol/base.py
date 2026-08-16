@@ -74,6 +74,7 @@ class ChatProtocolAdapter(Protocol):
         on_run_error: Callable[[str, list[ChatModelMessage]], Awaitable[None]],
         on_interrupted: Callable[[list[ChatModelMessage]], Awaitable[None]],
         on_finish: Callable[[], Awaitable[None]] | None = None,
+        on_snapshot: Callable[[list[ChatModelMessage]], Awaitable[None]] | None = None,
     ) -> StreamingResponse:
         """
         运行聊天代理并构建协议流式响应
@@ -87,6 +88,7 @@ class ChatProtocolAdapter(Protocol):
         :param on_run_error: 运行失败回调
         :param on_interrupted: 运行中断回调
         :param on_finish: 流结束回调
+        :param on_snapshot: 增量快照回调
         :return:
         """
         ...

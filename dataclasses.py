@@ -28,7 +28,6 @@ class ChatConversationState:
     message_rows: list[AIMessage]
     model_messages: list[ModelRequest | ModelResponse]
     row_model_message_ranges: list[tuple[int, int]]
-    context_start_index: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,8 +92,6 @@ class RegenerationPersistenceContext:
     user_id: int
     forwarded_props: AIChatForwardedPropsParam
     expected_message_versions: tuple[tuple[int, datetime | None], ...] = ()
-    expected_context_start_message_id: int | None = None
-    expected_context_cleared_time: datetime | None = None
     assistant_message_id: int | None = None
     insert_before_index: int | None = None
     replace_start_index: int | None = None

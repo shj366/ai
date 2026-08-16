@@ -104,6 +104,7 @@ class AgUiChatProtocolAdapter:
         on_run_error: Callable[[str, list[ChatModelMessage]], Awaitable[None]],
         on_interrupted: Callable[[list[ChatModelMessage]], Awaitable[None]],
         on_finish: Callable[[], Awaitable[None]] | None = None,
+        on_snapshot: Callable[[list[ChatModelMessage]], Awaitable[None]] | None = None,
     ) -> StreamingResponse:
         """
         运行聊天代理并返回 AG-UI 流式响应
@@ -117,6 +118,7 @@ class AgUiChatProtocolAdapter:
         :param on_run_error: 运行失败回调
         :param on_interrupted: 运行中断回调
         :param on_finish: 流结束回调
+        :param on_snapshot: 增量快照回调
         :return:
         """
         return build_streaming_response(
@@ -129,6 +131,8 @@ class AgUiChatProtocolAdapter:
             on_run_error=on_run_error,
             on_interrupted=on_interrupted,
             on_finish=on_finish,
+            conversation_id=run_context.conversation_id,
+            on_snapshot=on_snapshot,
         )
 
     @staticmethod

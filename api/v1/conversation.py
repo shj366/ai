@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Header, Path, Query, Request
+from starlette.responses import Response
 
 from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
@@ -84,23 +85,42 @@ async def update_conversation_pinned_status(
 
 
 @router.post(
-    '/{pk}/clear-context',
-    summary='清除对话上下文',
+    '/{pk}/stop',
+    summary='停止对话生成',
     dependencies=[DependsJwtAuth],
 )
-async def clear_conversation_context(
+async def stop_conversation_generation(
     request: Request,
     db: CurrentSessionTransaction,
     pk: Annotated[str, Path(description='对话 ID')],
 ) -> ResponseModel:
-    count = await ai_conversation_service.clear_context(
+    await ai_conversation_service.stop_generation(
         db=db,
         conversation_id=pk,
         user_id=request.user.id,
     )
-    if count > 0:
-        return response_base.success()
-    return response_base.fail()
+    return response_base.success()
+
+
+@router.get(
+    '/{pk}/stream',
+    summary='获取对话生成流',
+    dependencies=[DependsJwtAuth],
+)
+async def get_conversation_stream(
+    request: Request,
+    db: CurrentSession,
+    pk: Annotated[str, Path(description='对话 ID')],
+    last_event_id: Annotated[str | None, Header(alias='Last-Event-ID')] = None,
+    after: Annotated[str | None, Query(description='已接收的最后一个事件 ID')] = None,
+) -> Response:
+    return await ai_conversation_service.get_generation_stream(
+        db=db,
+        conversation_id=pk,
+        user_id=request.user.id,
+        last_event_id=last_event_id,
+        after=after,
+    )
 
 
 @router.delete('/{pk}', summary='删除对话', dependencies=[DependsJwtAuth])
