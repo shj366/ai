@@ -16,7 +16,10 @@ class AIMcpService:
     """AI MCP 服务类"""
 
     @staticmethod
-    def _normalize_transport_fields(obj: CreateAIMcpParam | UpdateAIMcpParam) -> CreateAIMcpParam | UpdateAIMcpParam:
+    def _normalize_transport_fields(
+        *,
+        obj: CreateAIMcpParam | UpdateAIMcpParam,
+    ) -> CreateAIMcpParam | UpdateAIMcpParam:
         """
         规范化 MCP 传输相关字段
 
@@ -94,7 +97,7 @@ class AIMcpService:
         :param obj: 创建 MCP 参数
         :return:
         """
-        obj = self._normalize_transport_fields(obj)
+        obj = self._normalize_transport_fields(obj=obj)
         if obj.tool_prefix and not match_string(r'^[A-Za-z0-9_-]+$', obj.tool_prefix):
             raise errors.RequestError(msg='MCP 工具名称前缀仅支持字母、数字、下划线和连字符')
         mcp = await ai_mcp_dao.get_by_name(db, name=obj.name)
@@ -111,7 +114,7 @@ class AIMcpService:
         :param obj: 更新 MCP 参数
         :return:
         """
-        obj = self._normalize_transport_fields(obj)
+        obj = self._normalize_transport_fields(obj=obj)
         if obj.tool_prefix and not match_string(r'^[A-Za-z0-9_-]+$', obj.tool_prefix):
             raise errors.RequestError(msg='MCP 工具名称前缀仅支持字母、数字、下划线和连字符')
         mcp = await ai_mcp_dao.get(db, pk)

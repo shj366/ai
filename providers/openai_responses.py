@@ -83,7 +83,7 @@ class OpenAIResponsesAdapter(ProviderAdapter):
             ))
         ):
             extras['openai_reasoning_effort'] = 'none'
-        if forwarded_props.generation_type == AIChatGenerationType.text and forwarded_props.enable_builtin_tools:
+        if forwarded_props.generation_type == AIChatGenerationType.text and forwarded_props.enable_code_execution:
             extras['openai_include_code_execution_outputs'] = True
         if forwarded_props.web_search == AIWebSearchType.builtin:
             extras['openai_include_web_search_sources'] = True

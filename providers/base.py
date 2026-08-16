@@ -21,8 +21,6 @@ COMMON_MODEL_SETTING_FIELDS: frozenset[str] = frozenset({
     'frequency_penalty',
     'logit_bias',
     'stop_sequences',
-    'extra_headers',
-    'extra_body',
 })
 
 

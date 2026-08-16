@@ -22,7 +22,7 @@ class XaiAdapter(ProviderAdapter):
     provider_type: ClassVar[AIProviderType] = AIProviderType.xai
     settings_cls: ClassVar[type] = XaiModelSettings
     capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset({'timeout', 'seed', 'logit_bias', 'extra_headers', 'extra_body'}),
+        excluded_setting_fields=frozenset({'timeout', 'seed', 'logit_bias'}),
         supports_image_generation=False,
         image_supported_fields=None,
         extra_response_settings={},

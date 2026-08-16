@@ -16,7 +16,7 @@ class GoogleAdapter(ProviderAdapter):
     provider_type: ClassVar[AIProviderType] = AIProviderType.google
     settings_cls: ClassVar[type] = GoogleModelSettings
     capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset({'parallel_tool_calls', 'logit_bias', 'extra_body'}),
+        excluded_setting_fields=frozenset({'parallel_tool_calls', 'logit_bias'}),
         supports_image_generation=True,
         image_supported_fields=frozenset({
             'image_output_compression',
