@@ -40,17 +40,6 @@ class ChatRunContext:
 
 
 @dataclass(frozen=True, slots=True)
-class ContextManagementPolicy:
-    """上下文管理策略"""
-
-    max_part_chars: int | None
-    max_messages: int | None
-    keep_messages: int
-    max_tokens: int | None
-    warning_threshold: float
-
-
-@dataclass(frozen=True, slots=True)
 class CapabilityContext:
     """能力构建上下文"""
 
@@ -61,7 +50,6 @@ class CapabilityContext:
     supported_native_tools: frozenset[type[AbstractNativeTool]]
     supports_image_output: bool
     has_builtin_tools: bool
-    context_management: ContextManagementPolicy
 
 
 @dataclass(frozen=True, slots=True)
