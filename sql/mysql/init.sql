@@ -1,33 +1,33 @@
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('AI', 'PluginAI', '/plugins/ai', 11, 'tabler:robot', 0, null, null, 1, 1, 1, '', null, null, now(), null);
+values ('ai.menu', 'PluginAI', '/plugins/ai', 11, 'tabler:robot', 0, null, null, 1, 1, 1, '', null, null, now(), null);
 
 set @ai_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('AI Chat', 'AIChat', '/plugins/ai/chat', 1, 'ri:chat-ai-line', 1, '/plugins/ai/views/chat/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.chat', 'AIChat', '/plugins/ai/chat', 1, 'ri:chat-ai-line', 1, '/plugins/ai/views/chat/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('默认模型', 'AIDefaultModel', '/plugins/ai/default-model', 2, 'carbon:model-alt', 1, '/plugins/ai/views/default-model/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.default-model', 'AIDefaultModel', '/plugins/ai/default-model', 2, 'carbon:model-alt', 1, '/plugins/ai/views/default-model/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 set @ai_default_model_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('模型服务', 'AIModelService', '/plugins/ai/model-service', 3, 'carbon:model-alt', 1, '/plugins/ai/views/model-service/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.model-service', 'AIModelService', '/plugins/ai/model-service', 3, 'carbon:model-alt', 1, '/plugins/ai/views/model-service/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 set @ai_model_service_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('快捷短语', 'AIQuickPhraseManage', '/plugins/ai/quick-phrase', 4, 'mdi:lightning-bolt-outline', 1, '/plugins/ai/views/quick-phrase/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.quick-phrase', 'AIQuickPhraseManage', '/plugins/ai/quick-phrase', 4, 'mdi:lightning-bolt-outline', 1, '/plugins/ai/views/quick-phrase/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 set @ai_quick_phrase_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('MCP 管理', 'AIMcpManage', '/plugins/ai/mcp', 5, 'simple-icons:modelcontextprotocol', 1, '/plugins/ai/views/mcp/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.mcp', 'AIMcpManage', '/plugins/ai/mcp', 5, 'simple-icons:modelcontextprotocol', 1, '/plugins/ai/views/mcp/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 set @ai_mcp_menu_id = LAST_INSERT_ID();
 
 insert into sys_menu (title, name, path, sort, icon, type, component, perms, status, display, cache, link, remark, parent_id, created_time, updated_time)
-values ('配置管理', 'AIConfigManage', '/plugins/ai/config', 6, 'codicon:symbol-parameter', 1, '/plugins/ai/views/config/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
+values ('ai.config', 'AIConfigManage', '/plugins/ai/config', 6, 'codicon:symbol-parameter', 1, '/plugins/ai/views/config/index', null, 1, 1, 1, '', null, @ai_menu_id, now(), null);
 
 set @ai_config_menu_id = LAST_INSERT_ID();
 

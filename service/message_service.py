@@ -18,6 +18,7 @@ from backend.plugin.ai.chat.persistence import (
     persist_terminal_regeneration,
 )
 from backend.plugin.ai.chat.runner import is_user_prompt_message, open_chat_session
+from backend.plugin.ai.chat.runs import abort_prepared_run, activate_run
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import ChatConversationState, RegenerationPersistenceContext
@@ -327,7 +328,7 @@ class AIMessageService:
                         status=AIMessageStatus.interrupted,
                     )
 
-                response = session.stream(
+                response = await session.stream(
                     user_id=user_id,
                     agent=agent,
                     run_context=run_context,
@@ -339,9 +340,14 @@ class AIMessageService:
                     on_run_error=on_run_error,
                     on_interrupted=on_interrupted,
                 )
+            activate_run(conversation_id)
         except BaseException:
             # 屏蔽取消：任务取消时仍完成客户端关闭，避免连接泄漏
             with anyio.CancelScope(shield=True):
+                try:
+                    await abort_prepared_run(conversation_id)
+                except Exception as abort_exc:
+                    log.warning(f'释放聊天任务租约失败: {abort_exc}')
                 if session is not None:
                     try:
                         await session.aclose()

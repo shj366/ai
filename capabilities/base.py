@@ -5,10 +5,8 @@ from backend.plugin.ai.dataclasses import CapabilityContext, CapabilityResult
 from backend.plugin.ai.enums import AIProviderType
 from backend.plugin.ai.providers.base import ProviderAdapter
 
-CapabilityBuilder: TypeAlias = Callable[
-    [CapabilityContext],
-    Awaitable[CapabilityResult | Sequence[CapabilityResult]],
-]
+CapabilityOutcome: TypeAlias = CapabilityResult | Sequence[CapabilityResult]
+CapabilityBuilder: TypeAlias = Callable[[CapabilityContext], CapabilityOutcome | Awaitable[CapabilityOutcome]]
 
 
 def function_tools_allowed(

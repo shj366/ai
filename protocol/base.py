@@ -62,7 +62,7 @@ class ChatProtocolAdapter(Protocol):
         """
         ...
 
-    def build_streaming_response(
+    async def build_streaming_response(
         self,
         *,
         user_id: int,

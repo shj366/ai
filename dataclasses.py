@@ -45,6 +45,8 @@ class CapabilityContext:
     db: AsyncSession
     adapter: ProviderAdapter
     forwarded_props: AIChatForwardedPropsParam
+    user_id: int | None
+    is_superuser: bool
     supports_tools: bool
     supported_native_tools: frozenset[type[AbstractNativeTool]]
     supports_image_output: bool

@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from inspect import isawaitable
 from typing import Any
 
 from pydantic_ai.capabilities import AbstractCapability
@@ -35,6 +36,8 @@ async def assemble_capabilities(
     db: AsyncSession,
     adapter: ProviderAdapter,
     forwarded_props: AIChatForwardedPropsParam,
+    user_id: int | None,
+    is_superuser: bool,
     supports_tools: bool,
     supported_native_tools: frozenset[type[AbstractNativeTool]],
     supports_image_output: bool,
@@ -45,6 +48,8 @@ async def assemble_capabilities(
     :param db: 数据库会话
     :param adapter: 供应商适配器
     :param forwarded_props: 聊天扩展参数
+    :param user_id: 用户 ID
+    :param is_superuser: 是否为超级管理员
     :param supports_tools: 是否支持函数工具
     :param supported_native_tools: 支持的原生工具集合
     :param supports_image_output: 是否支持图片输出
@@ -59,12 +64,16 @@ async def assemble_capabilities(
             db=db,
             adapter=adapter,
             forwarded_props=forwarded_props,
+            user_id=user_id,
+            is_superuser=is_superuser,
             supports_tools=supports_tools,
             supported_native_tools=supported_native_tools,
             supports_image_output=supports_image_output,
             has_builtin_tools=has_builtin,
         )
-        outcomes = await builder(ctx)
+        outcomes = builder(ctx)
+        if isawaitable(outcomes):
+            outcomes = await outcomes
         normalized: Sequence[Any] = outcomes if isinstance(outcomes, Sequence) else (outcomes,)
         for result in normalized:
             if result.capability is not None:

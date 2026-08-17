@@ -1,5 +1,5 @@
 pydantic-ai-slim[openai,google,anthropic,xai,openrouter,mcp,retries,tavily,duckduckgo,ag-ui,exa]==2.31.0
 pydantic-ai-harness[code-mode]==0.21.0
-# xai-sdk 1.18 仍声明 packaging<26、protobuf<7；与主项目 lock 对齐
+# xai-sdk 1.18 仍声明 packaging<26、protobuf<7
 packaging>=25.0,<26
 protobuf>=6.33.5,<7

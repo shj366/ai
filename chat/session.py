@@ -157,6 +157,8 @@ class AgentSession:
             db=db,
             adapter=self.adapter,
             forwarded_props=forwarded_props,
+            user_id=None if self.invocation_context is None else self.invocation_context.user_id,
+            is_superuser=False if self.invocation_context is None else self.invocation_context.is_superuser,
             supports_tools=supports_tools,
             supported_native_tools=supported_native_tools,
             supports_image_output=supports_image_output,
@@ -176,7 +178,7 @@ class AgentSession:
             capabilities=capabilities,
         )
 
-    def stream(
+    async def stream(
         self,
         *,
         user_id: int,
@@ -235,7 +237,7 @@ class AgentSession:
                 log.warning(f'关闭模型供应商客户端失败: {exc}')
 
         assistant_message_id = None if persistence is None else persistence.assistant_message_id
-        return protocol_adapter.build_streaming_response(
+        return await protocol_adapter.build_streaming_response(
             user_id=user_id,
             agent=agent,
             run_context=run_context,

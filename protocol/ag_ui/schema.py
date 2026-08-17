@@ -28,7 +28,7 @@ AIChatAgUiInputContentParam: TypeAlias = Annotated[
 class AIChatAgUiUserMessageInput(UserMessage, AIChatSchemaBase):
     """AI 对话用户输入消息参数"""
 
-    content: str | list[AIChatAgUiInputContentParam]
+    content: str | list[AIChatAgUiInputContentParam] = Field(description='用户输入内容')
 
 
 AIChatAgUiInputMessageParam: TypeAlias = AIChatAgUiUserMessageInput
@@ -37,7 +37,7 @@ AIChatAgUiInputMessageParam: TypeAlias = AIChatAgUiUserMessageInput
 class AIChatAgUiUserMessageDetail(UserMessage, AIChatMessageMetaSchemaBase):
     """AI 对话用户消息详情"""
 
-    content: str | list[AIChatAgUiInputContentParam]
+    content: str | list[AIChatAgUiInputContentParam] = Field(description='用户消息内容')
 
 
 class AIChatAgUiDeveloperMessageDetail(DeveloperMessage, AIChatMessageMetaSchemaBase):
@@ -78,7 +78,7 @@ AIChatAgUiSnapshotMessageDetail: TypeAlias = Annotated[
 ]
 
 
-class AIChatAgUiMessagesSnapshotDetail(MessagesSnapshotEvent):
+class AIChatAgUiMessagesSnapshotDetail(MessagesSnapshotEvent, AIChatSchemaBase):
     """AI 对话消息快照详情"""
 
     messages: list[AIChatAgUiSnapshotMessageDetail] = Field(description='消息快照列表')

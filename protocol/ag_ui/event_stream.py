@@ -18,14 +18,14 @@ from pydantic_ai import (
     capture_run_messages,
 )
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-from starlette.responses import Response, StreamingResponse
+from starlette.responses import StreamingResponse
 
+from backend.common.exception import errors
 from backend.common.log import log
+from backend.plugin.ai.chat.run_store import shared_chat_run_store
 from backend.plugin.ai.chat.runs import (
     ActiveChatRun,
     discard_run,
-    get_active_run,
-    get_run_end_sentinel,
     register_run,
 )
 from backend.plugin.ai.dataclasses import ChatAgentDeps
@@ -35,6 +35,8 @@ ChatAgentOutput: TypeAlias = BinaryImage | str
 ChatAgent: TypeAlias = Agent[ChatAgentDeps, ChatAgentOutput]
 
 _SNAPSHOT_INTERVAL_SECONDS = 2.0
+_LEASE_HEARTBEAT_INTERVAL_SECONDS = 5.0
+_CANCEL_POLL_INTERVAL_SECONDS = 1.0
 
 
 class _StreamLifecycle:
@@ -236,6 +238,9 @@ async def _observe_native_events(
             if 'created in a different Context' not in str(exc):
                 raise
             log.warning('Pydantic AI 消息捕获上下文已在其他任务关闭: {}', exc)
+        except Exception as exc:
+            lifecycle.record_error(str(exc) or '模型运行失败')
+            raise
     finally:
         # 屏蔽取消：任务取消时仍完成落库/回调，避免状态与资源不一致
         with anyio.CancelScope(shield=True):
@@ -250,6 +255,7 @@ async def _produce_run_events(
     *,
     conversation_id: str,
     run: ActiveChatRun,
+    encode_event: Callable[[BaseEvent], str],
     event_stream: AsyncIterator[BaseEvent],
     message_history: list[ChatModelMessage],
     lifecycle: _StreamLifecycle,
@@ -261,6 +267,7 @@ async def _produce_run_events(
 
     :param conversation_id: 对话 ID
     :param run: 进行中的生成任务
+    :param encode_event: 协议事件编码器
     :param event_stream: 官方协议事件流
     :param message_history: 传入模型的历史消息
     :param lifecycle: 流式回调生命周期
@@ -268,55 +275,79 @@ async def _produce_run_events(
     :param on_snapshot: 增量快照回调
     :return:
     """
+    monitor_task = asyncio.create_task(
+        _monitor_shared_run(conversation_id=conversation_id, run=run),
+        name=f'ai-chat-run-monitor-{conversation_id}',
+    )
+    observed_events = _observe_native_events(
+        event_stream=event_stream,
+        message_history=message_history,
+        lifecycle=lifecycle,
+        on_finish=on_finish,
+        on_snapshot=on_snapshot,
+    )
     try:
-        async for event in _observe_native_events(
-            event_stream=event_stream,
-            message_history=message_history,
-            lifecycle=lifecycle,
-            on_finish=on_finish,
-            on_snapshot=on_snapshot,
-        ):
-            run.publish(event)
+        async for event in observed_events:
+            try:
+                encoded_event = encode_event(event)
+            except Exception as exc:
+                lifecycle.record_error(str(exc) or '协议事件编码失败')
+                raise
+            run.publish(encoded_event)
+    except asyncio.CancelledError:
+        run.cancellation_token.cancel()
     except Exception as exc:
         log.exception(f'后台聊天生成任务异常 conversation_id={conversation_id}: {exc}')
     finally:
-        run.publish(get_run_end_sentinel())
-        discard_run(conversation_id, run)
+        monitor_task.cancel()
+        await asyncio.gather(monitor_task, return_exceptions=True)
+        try:
+            await observed_events.aclose()
+        except BaseException as exc:
+            lifecycle.record_error(str(exc) or '关闭模型事件流失败')
+            log.exception(f'关闭后台聊天事件流异常 conversation_id={conversation_id}: {exc}')
+        try:
+            await shared_chat_run_store.release(
+                conversation_id=conversation_id,
+                run_id=run.run_id,
+            )
+        except Exception as exc:
+            log.exception(f'完成共享聊天任务状态失败 conversation_id={conversation_id}: {exc}')
+        finally:
+            run.close_subscribers()
+            discard_run(conversation_id, run)
 
 
-async def _encode_run_events(
-    *,
-    encode_event: Callable[[BaseEvent], str],
-    run: ActiveChatRun,
-    after_id: int,
-) -> AsyncIterator[str]:
+async def _monitor_shared_run(*, conversation_id: str, run: ActiveChatRun) -> None:
     """
-    订阅并编码带 SSE id 的可恢复事件流
+    续期共享租约并接收跨进程取消信号
 
-    :param encode_event: 协议事件编码器
-    :param run: 进行中的生成任务
-    :param after_id: 已接收的最后一个事件 ID
+    :param conversation_id: 对话 ID
+    :param run: 当前进程持有的生成句柄
     :return:
     """
-    queue = run.subscribe(after_id=after_id)
-    end_sentinel = get_run_end_sentinel()
-    event_id = after_id
-    try:
-        while True:
-            item = await queue.get()
-            if item is end_sentinel:
-                break
-            event_id += 1
-            encoded = encode_event(item)
-            if encoded.startswith('id:'):
-                yield encoded
-                continue
-            yield f'id: {event_id}\n{encoded}'
-    finally:
-        run.unsubscribe(queue)
+    next_heartbeat = 0.0
+    while True:
+        now = time.monotonic()
+        try:
+            state = await shared_chat_run_store.poll(
+                conversation_id=conversation_id,
+                run_id=run.run_id,
+                renew=now >= next_heartbeat,
+            )
+        except Exception as exc:
+            log.warning(f'聊天任务协调状态读取失败 conversation_id={conversation_id}: {exc}')
+            run.cancellation_token.cancel()
+            return
+        if state != 2:
+            run.cancellation_token.cancel()
+            return
+        if now >= next_heartbeat:
+            next_heartbeat = now + _LEASE_HEARTBEAT_INTERVAL_SECONDS
+        await asyncio.sleep(_CANCEL_POLL_INTERVAL_SECONDS)
 
 
-def build_streaming_response(
+async def build_streaming_response(
     *,
     user_id: int,
     agent: ChatAgent,
@@ -347,97 +378,84 @@ def build_streaming_response(
     :return:
     """
     resolved_conversation_id = conversation_id or run_input.thread_id
-    active_run = get_active_run(resolved_conversation_id)
-    if active_run is None:
-        active_run = register_run(resolved_conversation_id)
-        try:
-            adapter = AGUIAdapter(
-                agent=_CancellationBoundAgent(agent, active_run.cancellation_token),
-                run_input=run_input,
-                accept=accept,
-                allow_uploaded_files=True,
-                preserve_file_data=True,
+    run_id = run_input.run_id
+    active_run = await register_run(conversation_id=resolved_conversation_id, run_id=run_id)
+    claimed = False
+    try:
+        adapter = AGUIAdapter(
+            agent=_CancellationBoundAgent(agent, active_run.cancellation_token),
+            run_input=run_input,
+            accept=accept,
+            allow_uploaded_files=True,
+            preserve_file_data=True,
+        )
+        lifecycle = _StreamLifecycle(
+            on_complete=on_complete,
+            on_run_error=on_run_error,
+            on_interrupted=on_interrupted,
+        )
+        event_stream_handler = adapter.build_event_stream()
+        response_headers = dict(event_stream_handler.response_headers or {})
+        claimed = await shared_chat_run_store.claim(
+            conversation_id=resolved_conversation_id,
+            run_id=run_id,
+        )
+        if not claimed:
+            raise errors.ConflictError(msg='当前对话正在生成，请稍后再试')
+        event_stream = adapter.run_stream(
+            deps=ChatAgentDeps(user_id=user_id),
+            message_history=message_history,
+            on_complete=lifecycle.complete,
+            on_cancel=lifecycle.cancel,
+        )
+    except BaseException:
+        if claimed:
+            await shared_chat_run_store.release(
+                conversation_id=resolved_conversation_id,
+                run_id=run_id,
             )
-            lifecycle = _StreamLifecycle(
-                on_complete=on_complete,
-                on_run_error=on_run_error,
-                on_interrupted=on_interrupted,
-            )
-            event_stream_handler = adapter.build_event_stream()
-            active_run.encode_event = event_stream_handler.encode_event
-            active_run.media_type = event_stream_handler.content_type
-            active_run.response_headers = dict(event_stream_handler.response_headers or {})
-            event_stream = adapter.run_stream(
-                deps=ChatAgentDeps(user_id=user_id),
-                message_history=message_history,
-                on_complete=lifecycle.complete,
-                on_cancel=lifecycle.cancel,
-            )
-            active_run.task = asyncio.create_task(
-                _produce_run_events(
-                    conversation_id=resolved_conversation_id,
-                    run=active_run,
-                    event_stream=event_stream,
-                    message_history=message_history,
-                    lifecycle=lifecycle,
-                    on_finish=on_finish,
-                    on_snapshot=on_snapshot,
-                ),
-                name=f'ai-chat-run-{resolved_conversation_id}',
-            )
-        except BaseException:
-            discard_run(resolved_conversation_id, active_run)
-            raise
-    return _build_subscriber_response(run=active_run, after_id=0)
+        discard_run(resolved_conversation_id, active_run)
+        raise
+
+    events = active_run.subscribe()
+    active_run.start(
+        _produce_run_events(
+            conversation_id=resolved_conversation_id,
+            run=active_run,
+            encode_event=event_stream_handler.encode_event,
+            event_stream=event_stream,
+            message_history=message_history,
+            lifecycle=lifecycle,
+            on_finish=on_finish,
+            on_snapshot=on_snapshot,
+        ),
+        conversation_id=resolved_conversation_id,
+    )
+    return _build_subscriber_response(
+        media_type=event_stream_handler.content_type,
+        response_headers=response_headers,
+        events=events,
+    )
 
 
-def parse_stream_resume_after_id(*, last_event_id: str | None, after: str | None) -> int:
-    """
-    解析可恢复流的起始事件偏移
-
-    :param last_event_id: Last-Event-ID 请求头
-    :param after: 查询参数中的事件偏移
-    :return:
-    """
-    raw = last_event_id or after
-    if raw is None or not raw.isdigit():
-        return 0
-    return int(raw)
-
-
-def build_resume_streaming_response(
+def _build_subscriber_response(
     *,
-    conversation_id: str,
-    after_id: int = 0,
-) -> Response:
-    """
-    续订进行中的对话生成流
-
-    :param conversation_id: 对话 ID
-    :param after_id: 已接收的最后一个事件 ID
-    :return:
-    """
-    active_run = get_active_run(conversation_id)
-    if active_run is None:
-        return Response(status_code=204)
-    return _build_subscriber_response(run=active_run, after_id=after_id)
-
-
-def _build_subscriber_response(*, run: ActiveChatRun, after_id: int) -> StreamingResponse:
+    media_type: str,
+    response_headers: dict[str, str],
+    events: AsyncIterator[str],
+) -> StreamingResponse:
     """
     构建订阅者 SSE 响应
 
-    :param run: 进行中的生成任务
-    :param after_id: 已接收的最后一个事件 ID
+    :param media_type: 流响应媒体类型
+    :param response_headers: 流响应头
+    :param events: 已编码事件流
     :return:
     """
-    encode_event = run.encode_event
-    if encode_event is None:
-        raise RuntimeError('生成任务缺少事件编码器')
     response = StreamingResponse(
-        _encode_run_events(encode_event=encode_event, run=run, after_id=after_id),
-        headers=run.response_headers or {},
-        media_type=run.media_type or 'text/event-stream',
+        events,
+        headers=response_headers,
+        media_type=media_type,
     )
     response.headers['X-Accel-Buffering'] = 'no'
     response.headers['Cache-Control'] = 'no-cache'

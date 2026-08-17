@@ -12,6 +12,7 @@
 - `AIInvocationContext` 面向通用调用生命周期，包含用户、供应商类型、供应商名称、模型、MCP、生成类型和会话信息
 - `AIInvocationResult` 标准化 Pydantic AI 用量字段，保留原始结果用于少数深度扩展场景
 - 可选策略插件可按用户分组、额度、租户、套餐等维度实现调用权限与用量处理
+- `ai_group`、`ai_quota`、`ai_tenant`、`ai_billing` 是规划中的可选扩展，不随本插件交付
 
 ## 模块职责
 
@@ -105,7 +106,8 @@ flowchart TD
   N -->|"是"| N1["拒绝请求<br/>避免同一会话并发上下文错乱"]
   N -->|"否"| O["写入 user 消息<br/>status = success"]
   O --> P["写入 assistant 占位消息<br/>status = pending"]
-  P --> Q["提交事务"]
+  P --> P1["获取 Redis 运行租约<br/>创建本地后台任务与订阅队列"]
+  P1 --> Q["提交事务并解除任务启动屏障"]
 
   Q --> R["AGUIAdapter.run_stream<br/>capture_run_messages 捕获原生状态"]
 
@@ -120,10 +122,18 @@ flowchart TD
   W --> AA["Pydantic AI AG-UI event stream<br/>转换为 TOOL_CALL_* / file event"]
   X --> AB["Pydantic AI AG-UI event stream<br/>转换为 RUN / STEP / STATE"]
 
-  Y --> AC["Pydantic AI streaming_response<br/>SSE 返回前端 AG-UI Event Stream"]
+  Y --> AC["本地订阅队列<br/>SSE 返回前端 AG-UI Event Stream"]
   Z --> AC
   AA --> AC
   AB --> AC
+
+  AC --> AC1{"页面是否离开 / HTTP 是否断开"}
+  AC1 -->|"是"| AC2["仅移除当前订阅者<br/>后台任务继续生成"]
+  AC1 -->|"否"| AD
+  AC2 --> AD
+
+  R --> R1["低频写入 pending 消息快照"]
+  R1 --> AL
 
   R --> AD{"流结束 / 报错 / 中止"}
   AD -->|"成功"| AE["更新 assistant 占位消息<br/>status = success<br/>保存 AgentRunResult.new_messages"]
@@ -136,7 +146,12 @@ flowchart TD
   AF --> AJ
   AG --> AJ
 
-  AJ --> AK["前端收到流结束<br/>合并 transientMessages / 同步会话状态"]
+  AJ --> AK["前端收到流结束或重新进入会话<br/>读取数据库快照并同步状态"]
+
+  AS["插件 lifespan"] --> AT["每 30 秒扫描静默超过 60 秒的 pending"]
+  AT --> AU{"Redis 运行租约是否仍有效"}
+  AU -->|"是"| AV["保持 pending"]
+  AU -->|"否"| AW["更新为 interrupted"]
 
   AL["历史消息接口 / 会话快照"] --> AM["读取 DB<br/>Pydantic AI ModelMessage JSON"]
   AM --> AN["AG-UI adapter.serialize_messages_to_snapshot<br/>按 ModelRequest / ModelResponse.state 构建快照"]

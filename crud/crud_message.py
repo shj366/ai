@@ -1,7 +1,8 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -90,6 +91,23 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
             status=AIMessageStatus.pending,
             deleted=0,
         )
+
+    async def get_stale_pending(self, db: AsyncSession, before: datetime) -> Sequence[AIMessage]:
+        """
+        获取超过指定时间仍未完成的生成消息
+
+        :param db: 数据库会话
+        :param before: 最后更新时间上限
+        :return:
+        """
+        result = await db.scalars(
+            select(self.model).where(
+                self.model.status == AIMessageStatus.pending,
+                self.model.deleted == 0,
+                func.coalesce(self.model.updated_time, self.model.created_time) < before,
+            )
+        )
+        return result.all()
 
     async def create(self, db: AsyncSession, obj: dict[str, Any]) -> AIMessage:
         """

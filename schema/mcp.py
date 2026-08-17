@@ -44,6 +44,7 @@ class GetAIMcpDetail(AIMcpSchemaBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description='MCP ID')
+    user_id: int = Field(description='用户 ID')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
 

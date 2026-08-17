@@ -9,6 +9,7 @@ from backend.common.exception import errors
 from backend.common.log import log
 from backend.database.db import async_db_session
 from backend.plugin.ai.chat.runner import is_user_prompt_message, open_chat_session
+from backend.plugin.ai.chat.runs import abort_prepared_run, activate_run
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import CompletionPersistenceContext
@@ -186,7 +187,7 @@ class AIChatService:
                     title=state.conversation.title if state.conversation else prompt,
                     assistant_message_id=assistant_message_id,
                 )
-                response = agent_session.stream(
+                response = await agent_session.stream(
                     user_id=user_id,
                     agent=agent,
                     run_context=run_context,
@@ -195,9 +196,14 @@ class AIChatService:
                     message_history=message_history,
                     persistence=persistence,
                 )
+            activate_run(conversation_id)
         except BaseException as exc:
             # 屏蔽取消：任务取消时仍完成客户端关闭，避免连接泄漏
             with anyio.CancelScope(shield=True):
+                try:
+                    await abort_prepared_run(conversation_id)
+                except Exception as abort_exc:
+                    log.warning(f'释放聊天任务租约失败: {abort_exc}')
                 if agent_session is not None:
                     try:
                         await agent_session.aclose()

@@ -93,7 +93,7 @@ class AgUiChatProtocolAdapter:
         )
 
     @staticmethod
-    def build_streaming_response(
+    async def build_streaming_response(
         *,
         user_id: int,
         agent: ChatAgent,
@@ -121,7 +121,7 @@ class AgUiChatProtocolAdapter:
         :param on_snapshot: 增量快照回调
         :return:
         """
-        return build_streaming_response(
+        return await build_streaming_response(
             user_id=user_id,
             agent=agent,
             run_input=cast('RunAgentInput', run_context.protocol_context),

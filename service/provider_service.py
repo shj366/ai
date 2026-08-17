@@ -177,6 +177,12 @@ class AIProviderService:
         existing_models = await ai_model_dao.get_all(db, provider_id=pk)
         existing_models_by_id = {model.model_id: model for model in existing_models}
         provider_models = await self.get_models(db=db, pk=pk)
+        provider_model_ids = {model.id for model in provider_models}
+        removed_models = [model for model in existing_models if model.model_id not in provider_model_ids]
+        await ai_default_model_dao.delete_by_provider_model_pairs(
+            db,
+            [(model.provider_id, model.model_id) for model in removed_models],
+        )
         await ai_model_dao.delete_by_provider(db, pk)
         if not provider_models:
             return

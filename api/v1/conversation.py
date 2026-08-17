@@ -1,7 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Path, Query, Request
-from starlette.responses import Response
+from fastapi import APIRouter, Path, Request
 
 from backend.common.pagination import CursorPageData, DependsCursorPagination
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
@@ -100,27 +99,6 @@ async def stop_conversation_generation(
         user_id=request.user.id,
     )
     return response_base.success()
-
-
-@router.get(
-    '/{pk}/stream',
-    summary='获取对话生成流',
-    dependencies=[DependsJwtAuth],
-)
-async def get_conversation_stream(
-    request: Request,
-    db: CurrentSession,
-    pk: Annotated[str, Path(description='对话 ID')],
-    last_event_id: Annotated[str | None, Header(alias='Last-Event-ID')] = None,
-    after: Annotated[str | None, Query(description='已接收的最后一个事件 ID')] = None,
-) -> Response:
-    return await ai_conversation_service.get_generation_stream(
-        db=db,
-        conversation_id=pk,
-        user_id=request.user.id,
-        last_event_id=last_event_id,
-        after=after,
-    )
 
 
 @router.delete('/{pk}', summary='删除对话', dependencies=[DependsJwtAuth])

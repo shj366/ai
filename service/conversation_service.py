@@ -1,20 +1,18 @@
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import Response
 
 from backend.common.exception import errors
+from backend.common.log import log
 from backend.common.pagination import cursor_paging_data
-from backend.plugin.ai.chat.runs import has_active_run, request_stop_run
+from backend.database.db import async_db_session
+from backend.plugin.ai.chat.runs import has_active_run, request_stop_run, wait_run_stopped
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import ChatConversationState
 from backend.plugin.ai.enums import AIMessageStatus
 from backend.plugin.ai.model.conversation import AIConversation
-from backend.plugin.ai.protocol.ag_ui.event_stream import (
-    build_resume_streaming_response,
-    parse_stream_resume_after_id,
-)
 from backend.plugin.ai.protocol.registry import get_chat_protocol_adapter
 from backend.plugin.ai.schema.conversation import (
     GetAIConversationDetail,
@@ -40,7 +38,7 @@ class AIConversationService:
         :param conversation_id: 对话 ID
         :return:
         """
-        if has_active_run(conversation_id):
+        if await has_active_run(conversation_id):
             raise errors.ConflictError(msg='当前对话正在生成，请稍后再试')
         pending_rows = await ai_message_dao.get_pending(db, conversation_id)
         for row in pending_rows:
@@ -49,6 +47,37 @@ class AIConversationService:
                 row.id,
                 {'status': AIMessageStatus.interrupted},
             )
+
+    @staticmethod
+    async def reconcile_stale_pending(*, stale_after_seconds: int = 60) -> int:
+        """
+        将租约已失效的残留 pending 消息收敛为中断
+
+        :param stale_after_seconds: 最短静默秒数
+        :return:
+        """
+        stale_before = timezone.now() - timedelta(seconds=stale_after_seconds)
+        async with async_db_session.begin() as db:
+            stale_rows = await ai_message_dao.get_stale_pending(db, stale_before)
+            rows_by_conversation: dict[str, list[int]] = {}
+            for row in stale_rows:
+                rows_by_conversation.setdefault(row.conversation_id, []).append(row.id)
+
+        reconciled = 0
+        for conversation_id, message_ids in rows_by_conversation.items():
+            try:
+                if await has_active_run(conversation_id):
+                    continue
+                async with async_db_session.begin() as db:
+                    for message_id in message_ids:
+                        reconciled += await ai_message_dao.update_pending(
+                            db,
+                            message_id,
+                            {'status': AIMessageStatus.interrupted},
+                        )
+            except Exception as exc:
+                log.warning(f'收敛残留聊天消息失败 conversation_id={conversation_id}: {exc}')
+        return reconciled
 
     async def stop_generation(
         self,
@@ -71,36 +100,11 @@ class AIConversationService:
             user_id=user_id,
             for_update=True,
         )
-        if request_stop_run(conversation_id):
+        if await request_stop_run(conversation_id):
+            if not await wait_run_stopped(conversation_id):
+                raise errors.ServerError(msg='停止对话生成超时，请稍后重试')
             return
         await self.ensure_idle(db=db, conversation_id=conversation_id)
-
-    async def get_generation_stream(
-        self,
-        *,
-        db: AsyncSession,
-        conversation_id: str,
-        user_id: int,
-        last_event_id: str | None,
-        after: str | None,
-    ) -> Response:
-        """
-        获取对话当前生成流
-
-        :param db: 数据库会话
-        :param conversation_id: 对话 ID
-        :param user_id: 用户 ID
-        :param last_event_id: Last-Event-ID 请求头
-        :param after: 查询参数中的事件偏移
-        :return:
-        """
-        await self.get_owned_conversation(
-            db=db,
-            conversation_id=conversation_id,
-            user_id=user_id,
-        )
-        after_id = parse_stream_resume_after_id(last_event_id=last_event_id, after=after)
-        return build_resume_streaming_response(conversation_id=conversation_id, after_id=after_id)
 
     @staticmethod
     async def get_owned_conversation(
@@ -206,7 +210,6 @@ class AIConversationService:
             model_ids=model_ids,
             message_indexes=message_indexes,
         )
-        pending_rows = await ai_message_dao.get_pending(db, conversation.conversation_id)
         return GetAIConversationDetail(
             id=conversation.id,
             conversation_id=conversation.conversation_id,
@@ -216,7 +219,7 @@ class AIConversationService:
             model_id=conversation.model_id,
             created_time=conversation.created_time,
             updated_time=conversation.updated_time,
-            is_generating=has_active_run(conversation.conversation_id) or bool(pending_rows),
+            is_generating=await has_active_run(conversation.conversation_id),
             messages_snapshot=messages_snapshot,
         )
 
@@ -237,6 +240,7 @@ class AIConversationService:
                 'conversation_id': item['conversation_id'],
                 'title': item['title'],
                 'is_pinned': item['pinned_time'] is not None,
+                'is_generating': await has_active_run(item['conversation_id']),
                 'created_time': item['created_time'],
                 'updated_time': item['updated_time'],
             }
@@ -318,6 +322,7 @@ class AIConversationService:
             user_id=user_id,
             for_update=True,
         )
+        await self.ensure_idle(db=db, conversation_id=conversation_id)
         await ai_message_dao.delete(db, conversation_id)
         return await ai_conversation_dao.delete(db, conversation_id, user_id)
 

@@ -19,13 +19,22 @@ async def build_mcp_capability(ctx: CapabilityContext) -> Sequence[CapabilityRes
     """
     if not ctx.forwarded_props.mcp_ids:
         return ()
-    mcps = await ai_mcp_service.get_by_ids(db=ctx.db, mcp_ids=ctx.forwarded_props.mcp_ids)
+    if ctx.user_id is None:
+        raise errors.AuthorizationError(msg='当前调用缺少 MCP 用户身份')
+    mcps = await ai_mcp_service.get_by_ids(
+        db=ctx.db,
+        mcp_ids=ctx.forwarded_props.mcp_ids,
+        user_id=ctx.user_id,
+        is_superuser=ctx.is_superuser,
+    )
     results: list[CapabilityResult] = []
     for mcp in mcps:
         headers = {str(key): str(value) for key, value in (mcp.headers or {}).items()}
         tool_prefix = (mcp.tool_prefix or f'mcp_{mcp.id}').rstrip('_') or f'mcp_{mcp.id}'
 
         if mcp.type == McpType.stdio:
+            if not mcp.command:
+                raise errors.RequestError(msg=f'MCP 缺少启动命令: {mcp.name}')
             transport = StdioTransport(
                 command=mcp.command,
                 args=mcp.args or [],

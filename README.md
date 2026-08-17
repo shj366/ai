@@ -36,11 +36,11 @@ AI_EXA_API_KEY: str = ''
 AI_TAVILY_API_KEY: str = ''
 
 # 基础配置（in plugin.toml）
-AI_CODE_MODE_DYNAMIC_CATALOG: bool = False
-AI_CODE_MODE_MAX_RETRIES: int = 3
-AI_CODE_MODE_TOOLS: list[str] = []
-AI_HTTP_MAX_RETRIES: int = 5
-AI_MCP_MAX_RETRIES: int = 1
+AI_CODE_MODE_DYNAMIC_CATALOG = false
+AI_CODE_MODE_MAX_RETRIES = 3
+AI_CODE_MODE_TOOLS = []
+AI_HTTP_MAX_RETRIES = 5
+AI_MCP_MAX_RETRIES = 1
 ```
 
 ## 配置项说明
@@ -57,7 +57,7 @@ AI_MCP_MAX_RETRIES: int = 1
 2. 通过 AI 配置管理菜单维护 `AI_EXA_API_KEY` 和 `AI_TAVILY_API_KEY`
 3. 先创建 AI 供应商，再同步或创建对应模型
 4. 配置默认助手模型
-5. 配置 MCP 和快捷短语等辅助能力，其中 OpenRouter 模型 ID 需使用 `供应商/模型` 格式
+5. 配置当前用户的 MCP 和快捷短语等辅助能力，其中 `stdio` MCP 仅超级管理员可用，OpenRouter 模型 ID 需使用 `供应商/模型` 格式
 6. 发起对话并维护会话历史
 
 ## 卸载说明

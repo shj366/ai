@@ -47,6 +47,7 @@ class GetAIConversationListDetail(SchemaBase):
     conversation_id: str = Field(description='对话 ID')
     title: str = Field(description='对话标题')
     is_pinned: bool = Field(description='是否置顶')
+    is_generating: bool = Field(default=False, description='是否正在生成')
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
 
