@@ -26,6 +26,7 @@ from backend.plugin.ai.enums import AIMessageStatus
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter
 from backend.plugin.ai.providers.base import ProviderAdapter
 from backend.plugin.ai.providers.http import build_retry_http_client
+from backend.plugin.ai.tools.attachment_download import download_attachments
 
 
 def _build_default_completion_callbacks(
@@ -136,6 +137,7 @@ class AgentSession:
             name='fba-chat',
             deps_type=ChatAgentDeps,
             model=self.model,
+            tools=[download_attachments],
         )
 
     async def stream(
