@@ -1,28 +1,19 @@
-from typing import ClassVar
-
 import httpx
 
 from openai import AsyncOpenAI
 from pydantic_ai.models import Model
-from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettings
+from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from backend.common.exception import errors
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.providers.base import ProviderAdapter, ProviderCapabilities, normalize_provider_api_host
+from backend.plugin.ai.providers.base import ProviderAdapter, normalize_provider_api_host
 
 
 class OpenRouterAdapter(ProviderAdapter):
     """OpenRouter 供应商适配器"""
 
-    provider_type: ClassVar[AIProviderType] = AIProviderType.openrouter
-    settings_cls: ClassVar[type] = OpenRouterModelSettings
-    capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset(),
-        supports_image_generation=False,
-        image_supported_fields=None,
-        extra_response_settings={},
-    )
+    provider_type = AIProviderType.openrouter
 
     def create_model(
         self,

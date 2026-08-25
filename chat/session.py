@@ -5,13 +5,10 @@ import httpx
 
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.models import Model
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.log import log
 from backend.database.db import async_db_session
-from backend.plugin.ai.chat.builder import build_model_settings
-from backend.plugin.ai.chat.generation.base import GenerationHandler
 from backend.plugin.ai.chat.persistence import (
     extract_assistant_messages,
     extract_assistant_run_messages,
@@ -19,7 +16,6 @@ from backend.plugin.ai.chat.persistence import (
     persist_pending_snapshot,
     persist_terminal_completion,
 )
-from backend.plugin.ai.chat.pipeline import assemble_capabilities
 from backend.plugin.ai.dataclasses import (
     ChatAgentDeps,
     ChatRunContext,
@@ -27,12 +23,9 @@ from backend.plugin.ai.dataclasses import (
     RegenerationPersistenceContext,
 )
 from backend.plugin.ai.enums import AIMessageStatus
-from backend.plugin.ai.policy.context import AIInvocationContext, AIInvocationResult
-from backend.plugin.ai.policy.registry import notify_ai_invocation_result
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter
 from backend.plugin.ai.providers.base import ProviderAdapter
 from backend.plugin.ai.providers.http import build_retry_http_client
-from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 
 
 def _build_default_completion_callbacks(
@@ -90,7 +83,6 @@ class AgentSession:
         self.model = model
         self._http_client = http_client
         self._closed = False
-        self.invocation_context: AIInvocationContext | None = None
 
     @classmethod
     async def open(
@@ -134,48 +126,16 @@ class AgentSession:
             if not self._http_client.is_closed:
                 await self._http_client.aclose()
 
-    async def build_agent(
-        self,
-        *,
-        db: AsyncSession,
-        forwarded_props: AIChatForwardedPropsParam,
-        generation_handler: GenerationHandler,
-    ) -> ChatAgent:
+    async def build_agent(self) -> ChatAgent:
         """
         构建聊天代理
 
-        :param db: 数据库会话
-        :param forwarded_props: 聊天扩展参数
-        :param generation_handler: 生成模式处理器
         :return:
         """
-        profile = self.model.profile
-        supports_tools = bool(profile.get('supports_tools', False))
-        supported_native_tools = profile.get('supported_native_tools', frozenset())
-        supports_image_output = bool(profile.get('supports_image_output', False))
-        capabilities = await assemble_capabilities(
-            db=db,
-            adapter=self.adapter,
-            forwarded_props=forwarded_props,
-            user_id=None if self.invocation_context is None else self.invocation_context.user_id,
-            is_superuser=False if self.invocation_context is None else self.invocation_context.is_superuser,
-            supports_tools=supports_tools,
-            supported_native_tools=supported_native_tools,
-            supports_image_output=supports_image_output,
-        )
-        model_settings = build_model_settings(
-            adapter=self.adapter,
-            forwarded_props=forwarded_props,
-            model_name=self.model.model_name,
-        )
-        output_type = generation_handler.get_output_type()
         return Agent(
             name='fba-chat',
             deps_type=ChatAgentDeps,
             model=self.model,
-            model_settings=model_settings,
-            output_type=output_type,
-            capabilities=capabilities,
         )
 
     async def stream(
@@ -219,16 +179,8 @@ class AgentSession:
         if on_complete is None or on_run_error is None or on_interrupted is None:
             raise RuntimeError('缺少聊天生命周期回调')
 
-        async def complete_with_policy(result: AgentRunResult[Any]) -> None:
+        async def complete_with_persistence(result: AgentRunResult[Any]) -> None:
             await on_complete(result)
-            if self.invocation_context is None:
-                return
-            async with async_db_session.begin() as db:
-                await notify_ai_invocation_result(
-                    db=db,
-                    context=self.invocation_context,
-                    result=AIInvocationResult.from_agent_result(result),
-                )
 
         async def on_finish() -> None:
             try:
@@ -243,7 +195,7 @@ class AgentSession:
             run_context=run_context,
             accept=accept,
             message_history=message_history,
-            on_complete=complete_with_policy,
+            on_complete=complete_with_persistence,
             on_run_error=on_run_error,
             on_interrupted=on_interrupted,
             on_finish=on_finish,

@@ -10,7 +10,6 @@ from ag_ui.core import BaseEvent, RunAgentInput, RunErrorEvent
 from pydantic_ai import (
     Agent,
     AgentRunResult,
-    BinaryImage,
     CancellationToken,
     ModelRequest,
     ModelResponse,
@@ -31,7 +30,7 @@ from backend.plugin.ai.chat.runs import (
 from backend.plugin.ai.dataclasses import ChatAgentDeps
 
 ChatModelMessage: TypeAlias = ModelRequest | ModelResponse
-ChatAgentOutput: TypeAlias = BinaryImage | str
+ChatAgentOutput: TypeAlias = str
 ChatAgent: TypeAlias = Agent[ChatAgentDeps, ChatAgentOutput]
 
 _SNAPSHOT_INTERVAL_SECONDS = 2.0

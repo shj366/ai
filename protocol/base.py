@@ -1,14 +1,14 @@
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol, TypeAlias
 
-from pydantic_ai import Agent, AgentRunResult, BinaryImage, ModelMessage, ModelRequest, ModelResponse
+from pydantic_ai import Agent, AgentRunResult, ModelMessage, ModelRequest, ModelResponse
 from starlette.responses import StreamingResponse
 
 from backend.plugin.ai.dataclasses import ChatAgentDeps, ChatRunContext
 from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
 
 ChatModelMessage: TypeAlias = ModelRequest | ModelResponse
-ChatAgentOutput: TypeAlias = BinaryImage | str
+ChatAgentOutput: TypeAlias = str
 ChatAgent: TypeAlias = Agent[ChatAgentDeps, ChatAgentOutput]
 
 

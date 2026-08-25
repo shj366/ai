@@ -1,31 +1,17 @@
-from typing import ClassVar
-
 import httpx
 
 from pydantic_ai.models import Model
-from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.providers.base import ProviderAdapter, ProviderCapabilities, normalize_provider_api_host
+from backend.plugin.ai.providers.base import ProviderAdapter, normalize_provider_api_host
 
 
 class GoogleAdapter(ProviderAdapter):
     """Google 供应商适配器"""
 
-    provider_type: ClassVar[AIProviderType] = AIProviderType.google
-    settings_cls: ClassVar[type] = GoogleModelSettings
-    capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset({'parallel_tool_calls', 'logit_bias'}),
-        supports_image_generation=True,
-        image_supported_fields=frozenset({
-            'image_output_compression',
-            'image_output_format',
-            'image_size',
-            'image_aspect_ratio',
-        }),
-        extra_response_settings={},
-    )
+    provider_type = AIProviderType.google
 
     def create_model(
         self,

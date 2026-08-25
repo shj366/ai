@@ -1,27 +1,18 @@
-from typing import ClassVar
-
 import httpx
 
 from openai import AsyncOpenAI
 from pydantic_ai.models import Model
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.providers.base import ProviderAdapter, ProviderCapabilities, normalize_provider_api_host
+from backend.plugin.ai.providers.base import ProviderAdapter, normalize_provider_api_host
 
 
 class OpenAIAdapter(ProviderAdapter):
     """OpenAI Chat 供应商适配器"""
 
-    provider_type: ClassVar[AIProviderType] = AIProviderType.openai
-    settings_cls: ClassVar[type] = OpenAIChatModelSettings
-    capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset(),
-        supports_image_generation=False,
-        image_supported_fields=None,
-        extra_response_settings={},
-    )
+    provider_type = AIProviderType.openai
 
     def create_model(
         self,

@@ -29,14 +29,6 @@ class AIProviderType(IntEnum):
         }[self]
 
 
-class McpType(IntEnum):
-    """MCP 类型"""
-
-    stdio = 0
-    sse = 1
-    streamable_http = 2
-
-
 class AIChatAttachmentType(StrEnum):
     """聊天附件类型"""
 
@@ -53,13 +45,6 @@ class AIChatAttachmentSourceType(StrEnum):
     base64 = 'base64'
 
 
-class AIChatGenerationType(StrEnum):
-    """聊天生成类型"""
-
-    text = 'text'
-    image = 'image'
-
-
 class AIMessageStatus(StrEnum):
     """AI 消息状态"""
 
@@ -67,23 +52,3 @@ class AIMessageStatus(StrEnum):
     success = 'success'
     error = 'error'
     interrupted = 'interrupted'
-
-
-class AIWebSearchType(StrEnum):
-    """网络搜索模式"""
-
-    off = 'off'
-    builtin = 'builtin'
-    exa = 'exa'
-    tavily = 'tavily'
-    duckduckgo = 'duckduckgo'
-
-
-class AIChatThinkingType(StrEnum):
-    """聊天模型思考强度"""
-
-    minimal = 'minimal'
-    low = 'low'
-    medium = 'medium'
-    high = 'high'
-    xhigh = 'xhigh'

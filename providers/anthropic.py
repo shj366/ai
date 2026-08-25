@@ -1,27 +1,18 @@
-from typing import ClassVar
-
 import httpx
 
 from anthropic import AsyncAnthropic
 from pydantic_ai.models import Model
-from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.providers.base import ProviderAdapter, ProviderCapabilities, normalize_provider_api_host
+from backend.plugin.ai.providers.base import ProviderAdapter, normalize_provider_api_host
 
 
 class AnthropicAdapter(ProviderAdapter):
     """Anthropic 供应商适配器"""
 
-    provider_type: ClassVar[AIProviderType] = AIProviderType.anthropic
-    settings_cls: ClassVar[type] = AnthropicModelSettings
-    capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset({'seed', 'presence_penalty', 'frequency_penalty', 'logit_bias'}),
-        supports_image_generation=False,
-        image_supported_fields=None,
-        extra_response_settings={},
-    )
+    provider_type = AIProviderType.anthropic
 
     def create_model(
         self,

@@ -1,16 +1,15 @@
 from inspect import isawaitable
-from typing import ClassVar
 from urllib.parse import urlsplit
 
 import httpx
 
 from pydantic_ai.models import Model
-from pydantic_ai.models.xai import XaiModel, XaiModelSettings
+from pydantic_ai.models.xai import XaiModel
 from pydantic_ai.providers.xai import XaiProvider
 from xai_sdk import AsyncClient
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.providers.base import ProviderAdapter, ProviderCapabilities, normalize_provider_api_host
+from backend.plugin.ai.providers.base import ProviderAdapter, normalize_provider_api_host
 
 
 class XaiAdapter(ProviderAdapter):
@@ -19,14 +18,7 @@ class XaiAdapter(ProviderAdapter):
     使用 xai_sdk.AsyncClient 而非 httpx.AsyncClient，需要在 aclose 中显式关闭
     """
 
-    provider_type: ClassVar[AIProviderType] = AIProviderType.xai
-    settings_cls: ClassVar[type] = XaiModelSettings
-    capabilities: ClassVar[ProviderCapabilities] = ProviderCapabilities(
-        excluded_setting_fields=frozenset({'timeout', 'seed', 'logit_bias'}),
-        supports_image_generation=False,
-        image_supported_fields=None,
-        extra_response_settings={},
-    )
+    provider_type = AIProviderType.xai
 
     def __init__(self) -> None:
         self._clients: dict[int, AsyncClient] = {}
