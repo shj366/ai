@@ -1,10 +1,12 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_serializer
 from pydantic.alias_generators import to_camel
 
+from backend.common.enums import PrimaryKeyType
 from backend.common.schema import SchemaBase
+from backend.core.conf import settings
 
 
 class AIChatSchemaBase(SchemaBase):

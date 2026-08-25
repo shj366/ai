@@ -23,13 +23,3 @@ class AIConversation(Base):
     provider_id: Mapped[int] = mapped_column(sa.BigInteger, comment='供应商 ID')
     model_id: Mapped[str] = mapped_column(sa.String(512), comment='模型 ID')
     pinned_time: Mapped[datetime | None] = mapped_column(TimeZone, default=None, comment='置顶时间')
-    context_start_message_id: Mapped[int | None] = mapped_column(
-        sa.BigInteger,
-        default=None,
-        comment='上下文起始消息 ID',
-    )
-    context_cleared_time: Mapped[datetime | None] = mapped_column(
-        TimeZone,
-        default=None,
-        comment='上下文清除时间',
-    )

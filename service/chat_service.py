@@ -9,6 +9,7 @@ from backend.common.exception import errors
 from backend.common.log import log
 from backend.database.db import async_db_session
 from backend.plugin.ai.chat.runner import is_user_prompt_message, open_chat_session
+from backend.plugin.ai.chat.runs import abort_prepared_run, activate_run
 from backend.plugin.ai.crud.crud_conversation import ai_conversation_dao
 from backend.plugin.ai.crud.crud_message import ai_message_dao
 from backend.plugin.ai.dataclasses import CompletionPersistenceContext
@@ -21,43 +22,43 @@ from backend.plugin.ai.utils.conversation_control import normalize_generated_con
 from backend.plugin.ai.utils.message_storage import build_chat_message_record
 
 
-def _get_current_user_prompt_part(*, messages: list[ModelMessage]) -> UserPromptPart:
-    """
-    获取当前轮用户输入部分
-
-    :param messages: 模型消息列表
-    :return:
-    """
-    if len(messages) != 1:
-        raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
-    current_message = messages[-1]
-    if not isinstance(current_message, ModelRequest) or not is_user_prompt_message(message=current_message):
-        raise errors.RequestError(msg='最后一条消息必须是用户消息')
-    first_part = current_message.parts[0]
-    if not isinstance(first_part, UserPromptPart):
-        raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
-    return first_part
-
-
-def _parse_user_prompt(*, first_part: UserPromptPart) -> tuple[str, bool]:
-    """
-    解析用户输入文本和二进制输入状态
-
-    :param first_part: 用户输入部分
-    :return:
-    """
-    content_items = [first_part.content] if isinstance(first_part.content, str) else list(first_part.content)
-    prompt_parts = [item for item in content_items if isinstance(item, str)]
-    has_binary_input = len(prompt_parts) != len(content_items)
-    prompt = ' '.join(' '.join(part.split()) for part in prompt_parts if part.split())
-    return prompt, has_binary_input
-
-
 class AIChatService:
     """AI 聊天服务类"""
 
     @staticmethod
+    def _get_current_user_prompt_part(*, messages: list[ModelMessage]) -> UserPromptPart:
+        """
+        获取当前轮用户输入部分
+
+        :param messages: 模型消息列表
+        :return:
+        """
+        if len(messages) != 1:
+            raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
+        current_message = messages[-1]
+        if not isinstance(current_message, ModelRequest) or not is_user_prompt_message(message=current_message):
+            raise errors.RequestError(msg='最后一条消息必须是用户消息')
+        first_part = current_message.parts[0]
+        if not isinstance(first_part, UserPromptPart):
+            raise errors.RequestError(msg='普通聊天请求仅支持传入当前轮用户消息')
+        return first_part
+
+    @staticmethod
+    def _parse_user_prompt(*, first_part: UserPromptPart) -> tuple[str, bool]:
+        """
+        解析用户输入文本和二进制输入状态
+
+        :param first_part: 用户输入部分
+        :return:
+        """
+        content_items = [first_part.content] if isinstance(first_part.content, str) else list(first_part.content)
+        prompt_parts = [item for item in content_items if isinstance(item, str)]
+        has_binary_input = len(prompt_parts) != len(content_items)
+        prompt = ' '.join(' '.join(part.split()) for part in prompt_parts if part.split())
+        return prompt, has_binary_input
+
     async def create_completion(
+        self,
         *,
         user_id: int,
         obj: AIChatCompletionParam,
@@ -78,8 +79,8 @@ class AIChatService:
             log.warning(f'聊天消息加载失败: {e}')
             raise errors.RequestError(msg='聊天消息格式非法') from e
 
-        first_part = _get_current_user_prompt_part(messages=current_messages)
-        prompt, has_binary_input = _parse_user_prompt(first_part=first_part)
+        first_part = self._get_current_user_prompt_part(messages=current_messages)
+        prompt, has_binary_input = self._parse_user_prompt(first_part=first_part)
         if not prompt and not has_binary_input:
             raise errors.RequestError(msg='当前轮用户消息不能为空')
         run_context = protocol_adapter.build_run_context(
@@ -103,8 +104,8 @@ class AIChatService:
                 run_context=run_context,
                 messages=current_messages,
             )
-            first_part = _get_current_user_prompt_part(messages=current_messages)
-            prompt, has_binary_input = _parse_user_prompt(first_part=first_part)
+            first_part = self._get_current_user_prompt_part(messages=current_messages)
+            prompt, has_binary_input = self._parse_user_prompt(first_part=first_part)
             if not prompt and not has_binary_input:
                 raise errors.RequestError(msg='当前轮用户消息不能为空')
             payload_messages = to_jsonable_python(current_messages, by_alias=True)
@@ -131,8 +132,6 @@ class AIChatService:
                             model_id=forwarded_props.model_id,
                             user_id=conversation.user_id,
                             pinned_time=conversation.pinned_time,
-                            context_start_message_id=conversation.context_start_message_id,
-                            context_cleared_time=conversation.context_cleared_time,
                         ),
                     )
                 else:
@@ -180,7 +179,7 @@ class AIChatService:
                     must_exist=True,
                     require_messages=True,
                 )
-                message_history = state.model_messages[state.context_start_index :]
+                message_history = state.model_messages
                 persistence = CompletionPersistenceContext(
                     conversation_id=conversation_id,
                     user_id=user_id,
@@ -188,7 +187,7 @@ class AIChatService:
                     title=state.conversation.title if state.conversation else prompt,
                     assistant_message_id=assistant_message_id,
                 )
-                response = agent_session.stream(
+                response = await agent_session.stream(
                     user_id=user_id,
                     agent=agent,
                     run_context=run_context,
@@ -197,9 +196,14 @@ class AIChatService:
                     message_history=message_history,
                     persistence=persistence,
                 )
+            activate_run(conversation_id)
         except BaseException as exc:
-            # shield：任务取消时仍完成客户端关闭，避免连接泄漏
+            # 屏蔽取消：任务取消时仍完成客户端关闭，避免连接泄漏
             with anyio.CancelScope(shield=True):
+                try:
+                    await abort_prepared_run(conversation_id)
+                except Exception as abort_exc:
+                    log.warning(f'释放聊天任务租约失败: {abort_exc}')
                 if agent_session is not None:
                     try:
                         await agent_session.aclose()

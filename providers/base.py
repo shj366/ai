@@ -1,46 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, TypedDict
+from typing import ClassVar
 from urllib.parse import urlsplit
 
 import httpx
 
-from pydantic_ai import ModelSettings
 from pydantic_ai.models import Model
 
 from backend.plugin.ai.enums import AIProviderType
-from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
-
-COMMON_MODEL_SETTING_FIELDS: frozenset[str] = frozenset({
-    'max_tokens',
-    'temperature',
-    'top_p',
-    'timeout',
-    'parallel_tool_calls',
-    'seed',
-    'presence_penalty',
-    'frequency_penalty',
-    'logit_bias',
-    'stop_sequences',
-    'extra_headers',
-    'extra_body',
-})
-
-
-class ProviderCapabilities(TypedDict):
-    """供应商能力描述"""
-
-    excluded_setting_fields: frozenset[str]
-    supports_image_generation: bool
-    image_supported_fields: frozenset[str] | None
-    extra_response_settings: dict[str, bool]
 
 
 class ProviderAdapter(ABC):
     """供应商适配器基类"""
 
     provider_type: ClassVar[AIProviderType]
-    settings_cls: ClassVar[type[ModelSettings]]
-    capabilities: ClassVar[ProviderCapabilities]
 
     @abstractmethod
     def create_model(
@@ -78,16 +50,6 @@ class ProviderAdapter(ABC):
         :return:
         """
         return
-
-    def resolve_extra_settings(self, *, forwarded_props: AIChatForwardedPropsParam) -> dict[str, Any]:
-        """
-        获取供应商特有的额外 settings，默认无
-
-        :param forwarded_props: 聊天扩展参数
-        :return:
-        """
-        return {}
-
 
 def normalize_provider_api_host(provider_type: int | AIProviderType, api_host: str) -> str:
     """

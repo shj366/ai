@@ -1,7 +1,8 @@
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
 
@@ -76,20 +77,37 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         )
         return (rows[0].message_index if rows else -1) + 1
 
-    async def has_pending(self, db: AsyncSession, conversation_id: str) -> bool:
+    async def get_pending(self, db: AsyncSession, conversation_id: str) -> Sequence[AIMessage]:
         """
-        检查对话是否存在待完成消息
+        获取对话中未完成的生成消息
 
         :param db: 数据库会话
         :param conversation_id: 对话 ID
         :return:
         """
-        return await self.exists(
+        return await self.select_models(
             db,
             conversation_id=conversation_id,
             status=AIMessageStatus.pending,
             deleted=0,
         )
+
+    async def get_stale_pending(self, db: AsyncSession, before: datetime) -> Sequence[AIMessage]:
+        """
+        获取超过指定时间仍未完成的生成消息
+
+        :param db: 数据库会话
+        :param before: 最后更新时间上限
+        :return:
+        """
+        result = await db.scalars(
+            select(self.model).where(
+                self.model.status == AIMessageStatus.pending,
+                self.model.deleted == 0,
+                func.coalesce(self.model.updated_time, self.model.created_time) < before,
+            )
+        )
+        return result.all()
 
     async def create(self, db: AsyncSession, obj: dict[str, Any]) -> AIMessage:
         """
@@ -163,9 +181,9 @@ class CRUDAIMessage(CRUDPlus[AIMessage]):
         """
         return await self.update_model_by_column(db, obj, id=pk, deleted=0)
 
-    async def finalize_pending(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
+    async def update_pending(self, db: AsyncSession, pk: int, obj: dict[str, Any]) -> int:
         """
-        完成待生成消息
+        更新仍处于待生成状态的消息
 
         :param db: 数据库会话
         :param pk: 消息 ID

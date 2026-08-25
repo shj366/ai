@@ -5,33 +5,68 @@ import httpx
 
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.models import Model
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
 from backend.common.log import log
 from backend.database.db import async_db_session
-from backend.plugin.ai.chat.builder import build_model_settings
-from backend.plugin.ai.chat.generation.base import GenerationHandler
 from backend.plugin.ai.chat.persistence import (
     extract_assistant_messages,
     extract_assistant_run_messages,
     persist_completion,
+    persist_pending_snapshot,
     persist_terminal_completion,
 )
-from backend.plugin.ai.chat.pipeline import assemble_capabilities
 from backend.plugin.ai.dataclasses import (
     ChatAgentDeps,
     ChatRunContext,
     CompletionPersistenceContext,
-    ContextManagementPolicy,
+    RegenerationPersistenceContext,
 )
 from backend.plugin.ai.enums import AIMessageStatus
-from backend.plugin.ai.policy.context import AIInvocationContext, AIInvocationResult
-from backend.plugin.ai.policy.registry import notify_ai_invocation_result
 from backend.plugin.ai.protocol.base import ChatAgent, ChatModelMessage, ChatProtocolAdapter
 from backend.plugin.ai.providers.base import ProviderAdapter
 from backend.plugin.ai.providers.http import build_retry_http_client
-from backend.plugin.ai.schema.chat import AIChatForwardedPropsParam
+
+
+def _build_default_completion_callbacks(
+    *,
+    persistence: CompletionPersistenceContext,
+) -> tuple[
+    Callable[[AgentRunResult[Any]], Awaitable[None]],
+    Callable[[str, list[ChatModelMessage]], Awaitable[None]],
+    Callable[[list[ChatModelMessage]], Awaitable[None]],
+]:
+    """
+    构建普通聊天的默认生命周期回调
+
+    :param persistence: 普通聊天持久化上下文
+    :return:
+    """
+
+    async def default_on_complete(result: AgentRunResult[Any]) -> None:
+        async with async_db_session.begin() as db:
+            await persist_completion(
+                db=db,
+                persistence=persistence,
+                messages=extract_assistant_run_messages(result),
+            )
+
+    async def default_on_run_error(message: str, messages: list[ChatModelMessage]) -> None:
+        await persist_terminal_completion(
+            persistence=persistence,
+            messages=extract_assistant_messages(messages),
+            status=AIMessageStatus.error,
+            reason=message,
+        )
+
+    async def default_on_interrupted(messages: list[ChatModelMessage]) -> None:
+        await persist_terminal_completion(
+            persistence=persistence,
+            messages=extract_assistant_messages(messages),
+            status=AIMessageStatus.interrupted,
+        )
+
+    return default_on_complete, default_on_run_error, default_on_interrupted
 
 
 class AgentSession:
@@ -48,7 +83,6 @@ class AgentSession:
         self.model = model
         self._http_client = http_client
         self._closed = False
-        self.invocation_context: AIInvocationContext | None = None
 
     @classmethod
     async def open(
@@ -92,48 +126,19 @@ class AgentSession:
             if not self._http_client.is_closed:
                 await self._http_client.aclose()
 
-    async def build_agent(
-        self,
-        *,
-        db: AsyncSession,
-        forwarded_props: AIChatForwardedPropsParam,
-        generation_handler: GenerationHandler,
-        context_management: ContextManagementPolicy,
-    ) -> ChatAgent:
+    async def build_agent(self) -> ChatAgent:
         """
         构建聊天代理
 
-        :param db: 数据库会话
-        :param forwarded_props: 聊天扩展参数
-        :param generation_handler: 生成模式处理器
-        :param context_management: 上下文管理策略
         :return:
         """
-        profile = self.model.profile
-        supports_tools = bool(profile.get('supports_tools', False))
-        supported_native_tools = profile.get('supported_native_tools', frozenset())
-        supports_image_output = bool(profile.get('supports_image_output', False))
-        capabilities = await assemble_capabilities(
-            db=db,
-            adapter=self.adapter,
-            forwarded_props=forwarded_props,
-            supports_tools=supports_tools,
-            supported_native_tools=supported_native_tools,
-            supports_image_output=supports_image_output,
-            context_management=context_management,
-        )
-        model_settings = build_model_settings(adapter=self.adapter, forwarded_props=forwarded_props)
-        output_type = generation_handler.get_output_type()
         return Agent(
             name='fba-chat',
             deps_type=ChatAgentDeps,
             model=self.model,
-            model_settings=model_settings,
-            output_type=output_type,
-            capabilities=capabilities,
         )
 
-    def stream(
+    async def stream(
         self,
         *,
         user_id: int,
@@ -142,7 +147,7 @@ class AgentSession:
         protocol_adapter: ChatProtocolAdapter,
         accept: str | None,
         message_history: list[ChatModelMessage],
-        persistence: CompletionPersistenceContext | None = None,
+        persistence: CompletionPersistenceContext | RegenerationPersistenceContext | None = None,
         on_complete: Callable[[AgentRunResult[Any]], Awaitable[None]] | None = None,
         on_run_error: Callable[[str, list[ChatModelMessage]], Awaitable[None]] | None = None,
         on_interrupted: Callable[[list[ChatModelMessage]], Awaitable[None]] | None = None,
@@ -162,46 +167,20 @@ class AgentSession:
         :param on_interrupted: 自定义中断回调，未提供时默认持久化中断终态
         :return:
         """
-        callbacks = (on_complete, on_run_error, on_interrupted)
-        if persistence is None and any(callback is None for callback in callbacks):
+        if on_complete is None or on_run_error is None or on_interrupted is None:
+            if not isinstance(persistence, CompletionPersistenceContext):
+                raise RuntimeError('缺少聊天生命周期回调')
+            default_complete, default_error, default_interrupted = _build_default_completion_callbacks(
+                persistence=persistence
+            )
+            on_complete = on_complete or default_complete
+            on_run_error = on_run_error or default_error
+            on_interrupted = on_interrupted or default_interrupted
+        if on_complete is None or on_run_error is None or on_interrupted is None:
             raise RuntimeError('缺少聊天生命周期回调')
 
-        async def default_on_complete(result: AgentRunResult[Any]) -> None:
-            assert persistence is not None
-            async with async_db_session.begin() as db:
-                await persist_completion(
-                    db=db,
-                    persistence=persistence,
-                    messages=extract_assistant_run_messages(result),
-                )
-
-        async def default_on_run_error(message: str, messages: list[ChatModelMessage]) -> None:
-            assert persistence is not None
-            await persist_terminal_completion(
-                persistence=persistence,
-                messages=extract_assistant_messages(messages),
-                status=AIMessageStatus.error,
-                reason=message,
-            )
-
-        async def default_on_interrupted(messages: list[ChatModelMessage]) -> None:
-            assert persistence is not None
-            await persist_terminal_completion(
-                persistence=persistence,
-                messages=extract_assistant_messages(messages),
-                status=AIMessageStatus.interrupted,
-            )
-
-        async def complete_with_policy(result: AgentRunResult[Any]) -> None:
-            await (on_complete or default_on_complete)(result)
-            if self.invocation_context is None:
-                return
-            async with async_db_session.begin() as db:
-                await notify_ai_invocation_result(
-                    db=db,
-                    context=self.invocation_context,
-                    result=AIInvocationResult.from_agent_result(result),
-                )
+        async def complete_with_persistence(result: AgentRunResult[Any]) -> None:
+            await on_complete(result)
 
         async def on_finish() -> None:
             try:
@@ -209,14 +188,25 @@ class AgentSession:
             except Exception as exc:
                 log.warning(f'关闭模型供应商客户端失败: {exc}')
 
-        return protocol_adapter.build_streaming_response(
+        assistant_message_id = None if persistence is None else persistence.assistant_message_id
+        return await protocol_adapter.build_streaming_response(
             user_id=user_id,
             agent=agent,
             run_context=run_context,
             accept=accept,
             message_history=message_history,
-            on_complete=complete_with_policy,
-            on_run_error=on_run_error or default_on_run_error,
-            on_interrupted=on_interrupted or default_on_interrupted,
+            on_complete=complete_with_persistence,
+            on_run_error=on_run_error,
+            on_interrupted=on_interrupted,
             on_finish=on_finish,
+            on_snapshot=(
+                None
+                if persistence is None or assistant_message_id is None
+                else lambda messages: persist_pending_snapshot(
+                    assistant_message_id=assistant_message_id,
+                    messages=extract_assistant_messages(messages),
+                    provider_id=persistence.forwarded_props.provider_id,
+                    model_id=persistence.forwarded_props.model_id,
+                )
+            ),
         )

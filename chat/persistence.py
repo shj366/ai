@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any
 
-from pydantic_ai import AgentRunResult, ModelRequest, ModelResponse, SystemPromptPart, UserPromptPart
+from pydantic_ai import AgentRunResult, ModelRequest, ModelResponse, RunCancelled, SystemPromptPart, UserPromptPart
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,11 +46,11 @@ def extract_assistant_messages(run_messages: Sequence[ChatModelMessage]) -> list
     return assistant_messages
 
 
-def extract_assistant_run_messages(result: AgentRunResult[Any]) -> list[ChatModelMessage]:
+def extract_assistant_run_messages(result: AgentRunResult[Any] | RunCancelled) -> list[ChatModelMessage]:
     """
-    提取成功运行中的当前轮助手消息
+    提取当前轮助手消息
 
-    :param result: Agent 运行结果
+    :param result: 成功运行结果或第一方取消结果
     :return:
     """
     return extract_assistant_messages(result.new_messages())
@@ -155,8 +155,6 @@ async def persist_completion(
                 model_id=persistence.forwarded_props.model_id,
                 user_id=current.user_id,
                 pinned_time=current.pinned_time,
-                context_start_message_id=current.context_start_message_id,
-                context_cleared_time=current.context_cleared_time,
             ),
         )
     else:
@@ -285,6 +283,49 @@ async def persist_regeneration(
     )
 
 
+async def persist_pending_snapshot(
+    *,
+    assistant_message_id: int | None,
+    messages: list[ChatModelMessage],
+    provider_id: int,
+    model_id: str,
+) -> None:
+    """
+    回写进行中的助手消息快照，保持 pending
+
+    :param assistant_message_id: 占位消息 ID
+    :param messages: 当前已捕获的助手消息
+    :param provider_id: 供应商 ID
+    :param model_id: 模型 ID
+    :return:
+    """
+    if assistant_message_id is None or not messages:
+        return
+    payload_messages = to_jsonable_python(messages, by_alias=True)
+    if not isinstance(payload_messages, list):
+        return
+    chat_message_records = _build_chat_message_records(
+        messages=messages,
+        payload_messages=payload_messages,
+    )
+    assistant_records = [record for record in chat_message_records if record['role'] == 'assistant']
+    if not assistant_records:
+        return
+    try:
+        async with async_db_session.begin() as db:
+            await ai_message_dao.update_pending(
+                db,
+                assistant_message_id,
+                {
+                    'provider_id': provider_id,
+                    'model_id': model_id,
+                    **assistant_records[-1],
+                },
+            )
+    except Exception as exc:
+        log.warning(f'回写聊天生成快照失败: {exc}')
+
+
 async def persist_terminal_completion(
     *,
     persistence: CompletionPersistenceContext,
@@ -369,14 +410,27 @@ async def _finalize_pending_placeholder(
     message_id: int,
     payload: dict[str, Any],
 ) -> None:
-    """通过待生成状态校验防止过期任务覆盖新终态"""
-    count = await ai_message_dao.finalize_pending(db, message_id, payload)
+    """
+    通过待生成状态校验防止过期任务覆盖新终态
+
+    :param db: 数据库会话
+    :param message_id: 占位消息 ID
+    :param payload: 待写入字段
+    :return:
+    """
+    count = await ai_message_dao.update_pending(db, message_id, payload)
     if count == 0:
         raise errors.ConflictError(msg='生成任务已失效，请重试')
 
 
 async def _delete_pending_placeholder(*, db: AsyncSession, message_id: int) -> None:
-    """通过待生成状态校验删除重生成占位消息"""
+    """
+    通过待生成状态校验删除重生成占位消息
+
+    :param db: 数据库会话
+    :param message_id: 占位消息 ID
+    :return:
+    """
     count = await ai_message_dao.delete_pending(db, message_id)
     if count == 0:
         raise errors.ConflictError(msg='生成任务已失效，请重试')
@@ -393,4 +447,4 @@ async def _mark_placeholder_terminal(*, message_id: int | None, status: AIMessag
     if message_id is None:
         return
     async with async_db_session.begin() as db:
-        await ai_message_dao.finalize_pending(db, message_id, {'status': status})
+        await ai_message_dao.update_pending(db, message_id, {'status': status})
