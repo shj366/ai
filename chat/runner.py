@@ -58,7 +58,10 @@ async def open_chat_session(
         base_url=provider.api_host,
     )
     try:
-        agent = await session.build_agent()
+        agent = await session.build_agent(
+            provider_id=forwarded_props.provider_id,
+            model_id=forwarded_props.model_id,
+        )
     except ValueError as exc:
         # 屏蔽取消：任务取消时仍完成客户端关闭，避免连接泄漏
         with anyio.CancelScope(shield=True):

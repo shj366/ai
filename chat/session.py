@@ -127,17 +127,28 @@ class AgentSession:
             if not self._http_client.is_closed:
                 await self._http_client.aclose()
 
-    async def build_agent(self) -> ChatAgent:
+    async def build_agent(self, *, provider_id: int | None = None, model_id: str | None = None) -> ChatAgent:
         """
         构建聊天代理
 
         :return:
         """
+        tools = [download_attachments]
+        if provider_id is not None and model_id is not None:
+            try:
+                from backend.core.conf import settings
+                from backend.plugin.text2sql.agent_tool import build_text2sql_tool
+
+                if settings.AI_TEXT2SQL_ENABLED:
+                    tools.append(build_text2sql_tool(provider_id=provider_id, model_id=model_id))
+            except ModuleNotFoundError:
+                pass
+
         return Agent(
             name='fba-chat',
             deps_type=ChatAgentDeps,
             model=self.model,
-            tools=[download_attachments],
+            tools=tools,
         )
 
     async def stream(
