@@ -2,6 +2,7 @@
 icon = "https://wu-clan.github.io/picx-images-hosting/logo/fba.svg"
 summary = "AI"
 version = "1.0.0"
+fba_version = "~=1.17"
 description = "为系统提供 AI 赋能"
 author = "wu-clan"
 tags = ["agent", "ai"]
